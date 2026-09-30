@@ -1,0 +1,258 @@
+"""Small, explicit English/Chinese catalog; storage keys never change language."""
+import re
+
+LANGUAGES = {"zh-CN": "简体中文", "en": "English"}
+
+ZH = {
+    "Report mode: {mode}": "报告模式：{mode}",
+    "Price time: {time} New York": "行情时间：美东 {time}",
+    "StockWatch Intraday": "StockWatch 盘中简报",
+    "Completed NYSE session · USD": "NYSE 已完成交易时段 · 美元",
+    "Snapshot at {time} New York · not final closing prices": "快照生成时间：美东 {time} · 盘中价格，并非最终收盘价",
+    "Price time (New York)": "行情时间（美东）",
+    "Minute snapshots may be delayed. They are not final closing prices.": "分钟行情可能延迟，盘中快照并非最终收盘价格。",
+    "No active NYSE session; intraday run skipped": "当前不在 NYSE 正常交易时段，已跳过盘中报告。",
+    "Notable moves": "明显异动", "No moves reached the threshold.": "暂无达到阈值的明显异动。",
+    "Near candidate price (within 5%)": "接近候选目标价（距离不超过5%）",
+    "No candidates within 5% of target.": "暂无距离目标价5%以内的候选股票。",
+    "{symbol}: {change} today (movement threshold {threshold:g}%)": "{symbol}：今日 {change}（异动阈值 {threshold:g}%）",
+    "{symbol}: {price} · {distance} from target {target} · {status}": "{symbol}：{price} · 距目标价 {target} 为 {distance} · {status}",
+    "{symbol} is at ${price:.2f}, at or below candidate price ${threshold:.2f}.": "{symbol} 当前价格 ${price:.2f}，已低于或等于候选目标价 ${threshold:.2f}。",
+    "Candidate pool": "候选股票池", "Unheld candidates": "未持仓的候选股票",
+    "Watched stocks you hold": "已持仓的关注股票", "Status": "候选状态",
+    "watching": "观察中", "interested": "感兴趣", "waiting": "等待价格",
+    "Buy Below": "候选目标价（到价提醒）", "buy_below": "候选目标价",
+    "5D %": "近5日涨跌", "1M %": "近1月涨跌", "Distance to Buy Below": "距候选目标价",
+    "Loading candidate history…": "正在获取候选股票历史表现…",
+    "Your candidate pool is empty. Add a stock below; no purchase is made.": "候选股票池目前为空。可在下方添加关注股票，不会买入股票。",
+    "5D and 1M compare the first and last prices in the daily-bar window; today's unfinished bar may be included. Positive target distance means above buy_below.": "近5日和近1月涨跌按所选日线区间首尾价格计算，可能包含今天尚未收盘的日线。距目标价为正表示当前价高于 buy_below。",
+    "{symbol}: status must be watching, interested or waiting.": "{symbol}：候选状态仅支持 watching、interested 或 waiting。",
+    "Data unavailable: no active NYSE session": "数据不可用：当前不在 NYSE 正常交易时段。",
+    "Data unavailable: intraday prices missing or stale": "数据不可用：缺少当前交易日的盘中行情，或数据已过期。",
+    "Stock name or ticker": "股票名称或代码", "Search stocks": "搜索股票",
+    "e.g. Apple, Tesla, 苹果 or an ETF ticker": "例如 Apple、Tesla、苹果，或 ETF 代码",
+    "Searching stocks…": "正在搜索股票…", "Choose stock / ETF": "选择股票 / ETF",
+    "Search above to see options": "先搜索名称或代码，再从结果中选择",
+    "Enter ticker manually": "直接填写股票代码",
+    "In your portfolio or watchlist": "已有持仓或关注的股票", "EQUITY": "股票",
+    "No US stocks or ETFs found. Try an English name or enter a ticker manually.": "未找到美股或 ETF。请尝试英文名称，或勾选「直接填写股票代码」。",
+    "Stock search is temporarily unavailable. Choose an existing ticker or enter one manually.": "股票搜索暂时不可用，你仍可选择已有股票，或直接填写代码。",
+    "Add a transaction": "新增一笔交易", "Buy": "买入", "Sell": "卖出",
+    "Transaction direction": "买卖方向", "Execution price (USD)": "实际成交价（美元 / 股）",
+    "Add transaction": "添加交易", "Edit transaction history": "编辑已有交易 / 批量录入",
+    "Add or update a watched stock": "添加或修改关注股票", "Save this stock": "保存该股票设置",
+    "Set a number to 0 to leave that optional target or alert unset.": "目标股数、目标价格和涨跌幅填 0 表示不设置对应项目。",
+    "Edit all watchlist entries": "编辑整个关注列表",
+    "Dashboard": "总览", "Holdings": "持仓", "Transactions": "交易记录",
+    "Watchlist & Alerts": "关注与提醒", "Settings": "设置", "Navigation": "页面导航",
+    "Your portfolio, clearly.": "轻松看清你的美股持仓。", "Demo mode": "演示模式",
+    "Refresh market data": "刷新行情", "Language": "界面与日报语言",
+    "Total Cost": "持仓成本", "Market Value": "持仓市值", "Daily P/L": "今日盈亏",
+    "Unrealized P/L": "浮动盈亏", "Total Return": "持仓收益率",
+    "Symbol": "股票代码", "Shares": "股数", "Avg Cost": "平均成本", "Current Price": "当前价格",
+    "Daily %": "今日涨跌幅", "Return %": "收益率", "Portfolio Weight": "持仓占比",
+    "Distance from 52W High": "距52周高点", "Distance from 52W Low": "距52周低点",
+    "Price history": "历史价格", "Period": "时间范围", "Portfolio allocation": "持仓分配",
+    "Holding returns": "持仓收益率比较", "Date": "交易日期", "Side": "方向（BUY 买入 / SELL 卖出）",
+    "Price": "成交价", "Note": "备注", "Thesis": "持仓逻辑", "Target Shares": "目标股数",
+    "Below": "低于或等于此价格提醒", "Daily Move %": "单日涨跌幅阈值（%）",
+    "Base currency": "基础货币", "USD": "美元", "Configured": "已配置", "Missing": "未配置",
+    "Save transactions": "保存交易记录", "Save watchlist": "保存关注与提醒", "Save settings": "保存设置",
+    "Local email configuration": "本机邮件配置", "GitHub sync": "同步到 GitHub", "Sync with GitHub": "同步到 GitHub",
+    "Loading daily prices…": "正在获取历史价格…", "Loading portfolio…": "正在获取持仓行情…",
+    "Syncing with GitHub…": "正在同步到 GitHub…", "Data unavailable": "数据不可用",
+    "No current holdings.": "目前没有持仓。", "No new alerts.": "没有新触发的提醒。",
+    "No thesis configured.": "尚未填写持仓逻辑。", "Settings saved locally.": "设置已保存到本机。",
+    "Save failed; original file preserved.": "保存失败，原文件已保留。",
+    "Data unavailable: price history could not be loaded.": "历史行情暂时不可用，请稍后刷新。",
+    "Shares and prices are saved as decimal text. Same-day transactions follow row order; future trades are excluded until their date.": "股数和价格按小数保存。同一天的交易按表格顺序计算；未来日期的交易暂不计入持仓。",
+    "Demo files are read-only. Turn off Demo mode to edit your real portfolio.": "演示数据只供查看。关闭演示模式后，即可编辑你的真实持仓。",
+    "Transactions saved locally. Use Settings → Sync with GitHub to update daily reports.": "交易记录已保存到本机。请到「设置」点击「同步到 GitHub」，让每日任务使用最新数据。",
+    "Watchlist saved locally. Sync with GitHub to update daily alerts.": "关注与提醒已保存到本机。请到「设置」同步到 GitHub，让每日提醒使用最新配置。",
+    "Below triggers at or below the target; Daily Move % compares the absolute daily change. Email alerts are checked only by the daily job.": "目标价及候选目标价均在低于或等于阈值时提醒；涨跌幅阈值同时检查上涨和下跌。盘中与收盘邮件分别检查和去重。",
+    "Data provider: OpenBB / yfinance · local files · no brokerage access": "行情来源：OpenBB / yfinance · 本地文件保存 · 不连接券商",
+    "Only presence is shown. GitHub Actions uses repository Secrets, independently of this local environment.": "这里只检查本机是否设置了环境变量。云端日报使用 GitHub 仓库的 Secrets；本机显示「未配置」不代表云端未配置。",
+    "Sync commits transactions and config, pulls remote updates including alert state, and pushes to main.": "同步会上传交易记录、提醒和语言设置，并拉取云端的提醒状态。",
+    "This button uses your local Git login. Conflicting changes are preserved for manual resolution.": "使用本机已有的 Git 登录。遇到冲突时保留你的修改，并显示处理说明。",
+    "SIMULATED DEMO DATA · As of Oct 6, 2026 · No emails are sent. Demo files are read-only.": "模拟演示数据 · 示例日期：2026年10月6日 · 不发送邮件 · 演示数据只读",
+    "Could not read portfolio files. Check the project directory.": "无法读取持仓文件，请检查项目目录中的配置和交易文件。",
+    "No current holdings. Add transactions or enable Demo mode to explore StockWatch.": "目前没有持仓。请到「交易记录」添加买入记录，或打开「演示模式」先体验。",
+    "Daily P/L uses current shares × price change from previous close. Total Return excludes dividends and realized P/L.": "今日盈亏 = 当前股数 ×（当前价 − 前收盘价）。持仓收益率不包含股息和已卖出部分的盈亏。",
+    "Charts show priced holdings only; allocation is not the complete portfolio.": "图表仅显示已获取价格的持仓，当前分配比例并非完整投资组合。",
+    "Price history uses regular-session daily bars (including the current unfinished session when available). Prices are cached for up to five minutes.": "历史价格使用正常交易时段的日线；交易期间可能包含尚未收盘的数据。行情最多缓存5分钟，可点击「刷新行情」更新。",
+    "Data unavailable: {symbols}. Missing holdings are not treated as zero.": "以下股票的数据暂时不可用：{symbols}。缺失的持仓不会按零元计入市值。",
+    "Target: {target:g} shares · Held: {shares}": "目标股数：{target:g} · 当前持有：{shares}",
+    "{symbol}: {price} · {change} today · {source}": "{symbol}：{price} · 今日 {change} · {source}",
+    "5D": "近5个交易日", "1M": "近1个月", "3M": "近3个月", "6M": "近6个月", "1Y": "近1年",
+    "Simulated demo data": "模拟演示数据", "offline demo": "离线演示",
+    "StockWatch Daily": "StockWatch 每日持仓报告", "Portfolio": "投资组合", "Alerts": "提醒",
+    "Regular session": "正常交易时段", "Regular-session prices · USD": "正常交易时段价格 · 美元",
+    "SIMULATED DEMO DATA — not live market prices": "模拟演示数据：以下价格并非实时行情",
+    "Target price distances (informational)": "距目标价（仅供查看）", "Data availability": "行情状态",
+    "Price / Day": "价格 / 今日涨跌", "P/L / Return": "浮盈亏 / 收益率", "Weight": "占比",
+    "{shares} shares": "{shares} 股", "{value} today": "今日 {value}", "{value} total": "累计 {value}",
+    "Shares {shares} · Avg Cost {cost}": "股数 {shares} · 平均成本 {cost}",
+    "Today {value}": "今日 {value}", "Total {value}": "累计 {value}", "Weight {value}": "持仓占比 {value}",
+    "Daily P/L uses current shares × price change from previous close.": "今日盈亏按当前股数与前收盘价的价格变化计算。",
+    "Total Return is unrealized price return; excludes dividends, cash and realized P/L.": "持仓收益率仅反映未实现价格收益，不包含股息、现金和已实现盈亏。",
+    "Sources: {sources}": "数据来源：{sources}",
+    "{symbol} is at ${price:.2f}, at or below target price ${threshold:.2f}.": "{symbol} 当前价格 ${price:.2f}，已低于或等于你设置的目标价 ${threshold:.2f}。",
+    "{symbol} moved {change:+.2f}% today (configured threshold {threshold:g}%).": "{symbol} 今日涨跌幅为 {change:+.2f}%，达到你设置的 {threshold:g}% 提醒阈值。",
+    "{symbol} is {distance:.2f}% {relation} target price ${threshold:.2f}.": "{symbol} 当前价格{relation}目标价 ${threshold:.2f}，距离为 {distance:.2f}%。",
+    "above": "高于", "below": "低于", "at": "等于",
+    "Report generated for {session}: {holdings} holdings, {alerts} new alerts, {unavailable} tickers unavailable": "已生成 {session} 日报：{holdings} 只持仓，{alerts} 条新提醒，{unavailable} 只股票暂无行情。",
+    "Preview only: no email or state changes": "仅生成预览：不发送邮件，也不修改提醒状态。",
+    "Report already sent for {session}; skipping email": "{session} 日报已发送，本次跳过重复发送。",
+    "Email configuration missing or incomplete; delivery skipped; alerts remain pending": "邮件配置缺失或不完整，已跳过发送；未发送的提醒仍保留。",
+    "Gmail accepted report for {session}; notification state saved": "Gmail 已接收 {session} 日报，提醒状态已保存。",
+    "No completed New York session today; scheduled run skipped": "纽约今天尚无已收盘的交易时段，已跳过本次定时任务。",
+    "Starting {session} report with {source}": "开始生成 {session} 日报，数据来源：{source}。",
+    "Daily job failed: {error}": "每日任务失败：{error}",
+    "Invalid email address configuration.": "邮件地址配置无效，请检查发件地址和收件地址。",
+    "Gmail refused the report recipient.": "Gmail 拒绝了收件地址，请检查 REPORT_EMAIL。",
+    "Gmail delivery failed ({kind}); check Secrets and account settings.": "Gmail 发送失败（{kind}），请检查 GitHub Secrets 和 Gmail 应用专用密码。",
+    "Git unavailable or timed out. Check your terminal and network, then retry.": "Git 不可用或连接超时，请检查本机 Git 和网络后重试。",
+    "Git {command} failed. Check your Git login, repository permissions and network in a terminal.": "Git {command} 操作失败，请在终端检查 Git 登录、仓库权限和网络。",
+    "This project must be the Git repository root.": "请在 StockWatch 的 Git 仓库根目录启动程序。",
+    "Switch to main before syncing portfolio data.": "请先切换到 main 分支，再同步持仓数据。",
+    "Finish the existing Git operation before syncing.": "请先完成当前的 Git 合并或变基操作，再同步。",
+    "Other files have uncommitted changes. Commit or resolve them in a terminal first; nothing was discarded.": "其他文件存在未提交的修改。请先在终端提交或处理这些修改，再重试；你的文件没有被丢弃。",
+    "Remote data conflicts with your local commit. Your changes are preserved. Resolve the conflict in a terminal, then sync again.": "云端数据与你的本地提交发生冲突。本地修改已保留，请在终端解决冲突后再次同步。",
+    "Portfolio configuration synced with GitHub. Remote alert state has also been pulled.": "持仓、提醒和语言设置已同步到 GitHub，云端提醒状态也已拉取。",
+    "{label} must be a finite positive number.": "{label}必须是有效的正数。",
+    "{label} must be a finite non-negative number.": "{label}必须是有效的非负数。",
+    "{label} is outside the supported numeric range.": "{label}超出支持的数值范围。",
+    "Invalid US symbol: {symbol!r}": "美股代码无效：{symbol!r}",
+    "Row {row}: date must be YYYY-MM-DD.": "第{row}行：日期请填写为 YYYY-MM-DD，例如 2026-09-28。",
+    "Row {row}: side must be BUY or SELL.": "第{row}行：买入请填 BUY，卖出请填 SELL。",
+    "{date} {symbol}: cannot sell {shares}; only {held} shares held.": "{date} {symbol}：不能卖出 {shares} 股，目前仅持有 {held} 股。",
+    "CSV columns must be: {columns}": "交易 CSV 的列必须依次为：{columns}",
+    "CSV has rows with missing or extra columns.": "交易 CSV 存在列数不足或多余的行。",
+    "Config must contain only portfolio and watchlist.": "配置仅支持 portfolio 和 watchlist 两个部分。",
+    "Only portfolio.base_currency: USD is supported.": "基础货币仅支持 USD（美元）。",
+    "Language must be zh-CN or en.": "语言仅支持 zh-CN（简体中文）或 en（英文）。",
+    "watchlist must map symbols to settings.": "watchlist 必须按股票代码填写各自的设置。",
+    "Duplicate symbol: {symbol}": "股票代码重复：{symbol}",
+    "{symbol}: unsupported watchlist fields.": "{symbol}：关注列表中包含不支持的字段。",
+    "{symbol}: thesis must be text.": "{symbol}：持仓逻辑必须是文字。",
+    "{symbol}: alerts support below and daily_move_pct only.": "{symbol}：提醒仅支持目标价格 below 和涨跌幅 daily_move_pct。",
+    "Invalid YAML configuration.": "YAML 配置格式无效，请检查缩进和冒号。",
+    "State must be a JSON object.": "提醒状态文件必须是 JSON 对象。",
+    "Invalid state rule map.": "提醒规则状态格式无效。",
+    "Invalid report session in state.": "提醒状态中的日报日期无效。",
+    "Invalid state for {symbol}/{rule}.": "{symbol}/{rule} 的提醒状态无效。",
+    "Invalid notification date for {symbol}.": "{symbol} 的提醒通知日期无效。",
+    "Invalid JSON state; restore a valid file before running.": "提醒状态 JSON 文件已损坏，请恢复有效文件后再运行。",
+    "target_shares": "目标股数", "daily_move_pct": "涨跌幅阈值",
+    "Data unavailable: closing data is missing or stale": "数据不可用：缺少该交易日收盘价，或行情已过期。",
+    "Data unavailable: previous close": "数据不可用：缺少前收盘价。",
+    "Data unavailable: no demo fixture": "数据不可用：没有该股票的演示行情。",
+    "Data unavailable: Provider request timed out": "数据不可用：行情请求超时。",
+    "Data unavailable: Provider returned no usable data": "数据不可用：行情源未返回有效数据。",
+}
+
+
+ZH.update({
+    "Performance": "投资表现", "Holding unrealized return": "持仓未实现收益率",
+    "Holding performance": "持仓收益率", "Benchmark": "对比基准", "Excess return (pp)": "超额收益（百分点）",
+    "Realized P/L": "已实现盈亏", "Cumulative fees": "累计手续费", "Cumulative P/L": "累计盈亏",
+    "Holding market value": "持仓市值趋势", "Performance index (base 100)": "收益指数（起点100）",
+    "Index": "指数", "Series": "序列", "Since inception": "成立以来", "Fee": "手续费", "Fee (USD)": "手续费（美元）",
+    "Trade dates use New York market dates. Fees default to zero.": "交易日期按美东交易日填写；手续费默认为零。",
+    "Benchmark: price return, excluding dividends.": "对比基准采用不含股息的价格回报。",
+    "Holdings-only, excluding dividends and cash. Daily returns assume buys at day start and sells at day end.": "仅追踪持仓，不含股息及现金；按日初投入买入资金、日末取出卖出所得计算，交易日收益为日频近似。",
+    "Historical returns use completed sessions and exact anchors; 5D spans five trading intervals. Positive target distance means above buy_below.": "历史收益截至最近收盘；5D 为五个交易日间隔。距目标价为正表示当前价高于候选目标价。",
+    "Price history ends at the latest completed NYSE session. Prices are cached for up to five minutes.": "历史价格截至最近已完成的 NYSE 交易日；行情缓存最多五分钟。",
+    "Daily P/L adjusts for recorded buys, sells and fees; trade-day returns use daily timing assumptions.": "每日盈亏已调整登记的买卖及手续费；交易日收益采用日频资金流假设。",
+    "Holdings-only performance excludes dividends and cash. Realized P/L uses average cost, not tax lots.": "持仓表现不含股息及现金；已实现盈亏采用平均成本法，不用于税务申报。",
+    "History through {date}; excludes dividends and cash.": "历史截至 {date}，不含股息及现金。",
+    "Since inception: {portfolio} · {benchmark}: {return_}": "成立以来：{portfolio} · {benchmark}：{return_}",
+    "Realized P/L: {value}": "已实现盈亏：{value}",
+    "Recalculate local preview": "重新计算本地预览", "Calculating historical performance…": "正在计算历史表现…",
+    "History is missing or stale. Recalculate a local preview or wait for the closing workflow.": "历史记录缺失或已过期，可计算本地预览，或等待收盘任务更新。",
+    "No complete performance history yet. Original history and user files are preserved.": "暂无完整历史表现；原历史和用户文件已保留。",
+    "Local preview only; no Git-tracked history or alert state was modified.": "仅为本地预览，未修改云端历史文件或提醒状态。",
+    "Data gaps or stock splits prevent a continuous return calculation.": "数据缺口或拆股导致收益无法连续计算，请查看数据状态。",
+    "Stock split requires ledger reconciliation.": "检测到拆股，需要核对交易账；暂不自动处理公司行动。",
+    "Historical prices unavailable.": "历史价格暂时不可用。",
+    "Transactions must use NYSE session dates: {dates}": "交易日期必须为 NYSE 交易日，请更正：{dates}",
+    "Sell fee cannot exceed sale proceeds.": "卖出手续费不能超过卖出所得。",
+    "Invalid performance history version.": "历史表现文件版本不正确，请重建或恢复。",
+    "Invalid performance history.": "历史表现文件不正确，请重建或恢复。",
+    "Invalid performance JSON; rebuild or restore history.": "历史表现 JSON 已损坏，请重建或恢复。",
+})
+
+ZH.update({
+    "Control Center": "自动化设置中心", "Email notifications": "邮件通知",
+    "Email setting saved locally. Sync with GitHub to apply it to scheduled reports.": "邮件开关已保存到本地；同步到 GitHub 后定时报告才会采用此设置。",
+    "This switch controls sending only; reports and history continue. Sync to apply it in GitHub Actions.": "开关仅控制邮件发送，报告与历史仍正常生成；云端需同步配置后生效。",
+    "Email notifications disabled; history saved, alerts remain pending": "邮件通知已关闭；历史仍保存，待提醒未被消费。",
+    "Sync notification setting with GitHub": "同步通知设置到 GitHub", "Configuration synced to GitHub.": "配置已同步到 GitHub。",
+    "Refresh workflow status": "刷新自动任务状态", "Open workflow": "打开自动任务",
+    "Report mode": "报告模式", "Preview only (no email or state changes)": "仅预览（不发送邮件或修改正式历史和提醒状态）",
+    "Run workflow": "手动运行任务", "Workflow queued. Refresh status to see its result.": "任务已提交，请刷新状态查看结果。",
+    "Enable daily workflow": "启用每日自动任务", "Disable daily workflow": "停用每日自动任务",
+    "Workflow setting updated.": "自动任务设置已更新。",
+    "Uses your existing gh login. Disabling the daily workflow stops both schedules; CI stays enabled.": "使用本机已有 gh 登录；停用每日任务会停止两次定时报告，CI 测试仍启用。",
+    "macOS login startup": "macOS 登录自启", "Running": "运行中", "Stopped": "已停止", "Enabled": "已开启", "Disabled": "已关闭", "Responding": "有响应", "Closed": "未监听",
+    "Service: {state} · Login startup: {startup} · Port 8501: {port}": "服务：{state} · 登录自启：{startup} · 8501端口：{port}",
+    "Enable login startup": "开启登录自启", "Start service": "启动服务", "Stop service": "停止服务", "Disable login startup": "关闭登录自启",
+    "Service setting updated. Refresh the page to see its status.": "服务设置已更新，请刷新页面查看状态。",
+    "Login startup runs only the local Dashboard on 127.0.0.1:8501, not email jobs. Stopping it disconnects this page; cloud schedules continue.": "登录自启仅启动本地 Dashboard（127.0.0.1:8501），不运行邮件任务；停止服务会断开当前页面，云端定时任务继续。",
+    "Login startup is available only on macOS.": "登录自启仅支持 macOS。",
+    "GitHub CLI is missing. Install gh and run gh auth login in a terminal.": "未找到 GitHub CLI；请安装 gh，并在终端运行 gh auth login。",
+    "Control command unavailable or timed out. Check the local CLI installation.": "操作命令不可用或超时，请检查本机 CLI 安装。",
+    "Control command failed. Check GitHub login, permissions or launchd in a terminal.": "操作失败，请在终端检查 GitHub 登录、权限或 launchd 状态。",
+    "A github.com origin remote is required.": "需要配置 github.com 的 origin 远端。", "Invalid GitHub repository remote.": "GitHub 仓库远端格式不正确。",
+    "GitHub returned an unexpected workflow response.": "GitHub 返回的自动任务数据格式异常。",
+    "The existing launchd entry belongs to another checkout or is invalid; inspect it in a terminal.": "已有 launchd 配置属于另一个项目目录或格式错误，请在终端核对。",
+    "Port 8501 is already in use. Stop the manually started Dashboard before enabling login startup.": "8501端口已被占用；请先停止手动启动的 Dashboard，再开启登录自启。",
+    "Enable login startup before starting the managed service.": "请先开启登录自启，再启动受管理的服务。",
+    "notifications.email_enabled must be true or false.": "notifications.email_enabled 必须为 true 或 false。",
+    "active": "已启用", "disabled_manually": "手动停用", "disabled_inactivity": "因不活跃停用", "completed": "已完成", "queued": "排队中", "in_progress": "运行中", "success": "成功", "failure": "失败", "cancelled": "已取消", "Pending": "等待结果",
+})
+
+ZH.update({
+    "Watchlist summary (closing prices)": "关注列表简报（收盘价）",
+    "{symbol}: {price} · Today {daily} · 5D {five} · 1M {month}": "{symbol}：{price} · 当日 {daily} · 5D {five} · 1M {month}",
+    "Watching needs no target price or alert. Optional fields can stay empty.": "纯观察无需目标价或提醒；可选项目可以留空。",
+    "Optional targets & alerts": "可选：目标价与提醒",
+    "Cannot verify repository privacy. Check gh login before syncing personal data.": "无法核验仓库私有状态，请先检查 gh 登录后再同步个人数据。",
+    "Personal configuration can only sync to a verified private GitHub repository.": "个人配置只能同步到已核验的私有 GitHub 仓库。",
+    "Closing report": "收盘日报", "Intraday brief": "盘中简报",
+})
+
+def language(config: dict) -> str:
+    return config.get("portfolio", {}).get("language", "en")
+
+
+def t(message: str, lang: str = "en", **values) -> str:
+    template = ZH.get(message, message) if lang == "zh-CN" else message
+    return template.format(**values) if values else template
+
+
+def data_status(message: str | None, lang: str) -> str:
+    message = message or "Data unavailable"
+    if lang == "zh-CN" and message not in ZH:
+        return "行情暂时不可用，请稍后刷新。"
+    return t(message, lang)
+
+
+class UserFacingError:
+    """Exception mixin retains templates, so errors can be translated reliably."""
+    def __init__(self, message: str, **values):
+        self.template = message
+        self.values = values
+        super().__init__(message.format(**values) if values else message)
+
+    def localized(self, lang: str) -> str:
+        values = dict(self.values)
+        if lang == "zh-CN" and "label" in values:
+            label = values["label"]
+            row = re.fullmatch(r"Row (\d+) (shares|price)", label)
+            values["label"] = f"第{row[1]}行的{'股数' if row[2] == 'shares' else '成交价'}" if row else ("目标价格" if label == "below" else t(label, lang))
+        return t(self.template, lang, **values)
+
+
+def error_message(error: Exception, lang: str) -> str:
+    return error.localized(lang) if isinstance(error, UserFacingError) else t(str(error), lang)

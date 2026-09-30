@@ -1,0 +1,4 @@
+date,symbol,side,shares,price,note,fee
+2026-09-28,CORE,BUY,1,100,Synthetic demo purchase,0
+2026-10-05,TECH,BUY,2,50,Synthetic demo purchase,0.5
+2026-10-05,VALUE,BUY,3,20,Synthetic demo purchase,0

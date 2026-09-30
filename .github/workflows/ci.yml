@@ -1,0 +1,59 @@
+name: StockWatch CI
+
+on:
+  push:
+    paths-ignore:
+      - data/state.json
+      - data/performance.json
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stockwatch-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install locked dependencies
+        run: |
+          python -m pip install -r requirements.lock
+          python -m pip install --no-deps -e .
+      - name: Check public release privacy
+        if: github.event.repository.private == false
+        run: python tools/check_public_release.py
+      - name: Check dependency compatibility
+        run: python -m pip check
+      - name: Run offline tests
+        run: python -m pytest
+
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements-runtime.lock
+      - name: Install headless runtime
+        run: |
+          python -m pip install -r requirements-runtime.lock
+          python -m pip install --no-deps -e .
+          python -m pip check
+      - name: Verify independent daily CLI
+        run: |
+          python -c 'import importlib.util; assert importlib.util.find_spec("streamlit") is None; assert importlib.util.find_spec("plotly") is None'
+          python -m stockwatch.daily --demo --dry-run

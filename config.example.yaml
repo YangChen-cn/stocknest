@@ -1,0 +1,8 @@
+# Copy to config.yaml. This file contains no positions or trading instructions.
+portfolio:
+  base_currency: USD
+  language: en                 # en / zh-CN
+  benchmark: SPY              # configurable US stock or ETF price benchmark
+notifications:
+  email_enabled: true
+watchlist: {}                  # targets and alerts are completely optional

@@ -1,0 +1,15 @@
+{
+  "session": "2026-10-06",
+  "instruments": {
+    "CORE": {"name": "Synthetic Core ETF", "kind": "ETF"},
+    "TECH": {"name": "Synthetic Tech Company", "kind": "EQUITY"},
+    "VALUE": {"name": "Synthetic Value Company", "kind": "EQUITY"},
+    "CAND": {"name": "Synthetic Candidate Company", "kind": "EQUITY"}
+  },
+  "quotes": {
+    "CORE": {"price": 102, "previous_close": 101, "year_high": 120, "year_low": 80},
+    "TECH": {"price": 55, "previous_close": 52, "year_high": 70, "year_low": 35},
+    "VALUE": {"price": 18, "previous_close": 20, "year_high": 30, "year_low": 15},
+    "CAND": {"price": 39, "previous_close": 40, "year_high": 60, "year_low": 25}
+  }
+}

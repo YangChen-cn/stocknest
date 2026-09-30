@@ -1,0 +1,22 @@
+# Synthetic, offline demo only. Symbols are placeholders, not trading ideas.
+portfolio:
+  base_currency: USD
+  language: en
+  benchmark: CORE
+watchlist:
+  CORE:
+    thesis: Synthetic demo ETF holding
+  TECH:
+    status: interested
+    target_shares: 4
+    thesis: Synthetic demo stock holding
+    alerts:
+      daily_move_pct: 5
+  VALUE:
+    status: watching
+    buy_below: 19
+    thesis: Synthetic demo stock with an optional price alert
+  CAND:
+    status: waiting
+    buy_below: 40
+    thesis: Synthetic unheld demo candidate

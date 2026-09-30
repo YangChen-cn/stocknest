@@ -1,0 +1,111 @@
+name: StockWatch Daily
+
+on:
+  schedule:
+    - cron: '30 10 * * 1-5'
+      timezone: America/New_York
+    - cron: '30 18 * * 1-5'
+      timezone: America/New_York
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 报告模式（盘中模式在非交易时段自动跳过）
+        type: choice
+        options: [CLOSE, INTRADAY]
+        default: CLOSE
+      dry_run:
+        description: 仅生成报告，不发送邮件或修改提醒状态（Dry run）
+        type: boolean
+        default: false
+      rebuild_performance:
+        description: 重新回补历史表现（收盘模式）
+        type: boolean
+        default: false
+      force_send:
+        description: 强制重发所选模式的报告，提醒仍去重（Force send）
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stockwatch-daily
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    if: github.ref == 'refs/heads/main' && github.event.repository.private == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements-runtime.lock
+      - name: Install locked dependencies
+        run: |
+          python -m pip install -r requirements-runtime.lock
+          python -m pip install --no-deps -e .
+      - name: Generate and deliver daily report
+        id: report
+        env:
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          REPORT_EMAIL: ${{ secrets.REPORT_EMAIL }}
+          SCHEDULED: ${{ github.event_name == 'schedule' }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          REBUILD_PERFORMANCE: ${{ inputs.rebuild_performance }}
+          FORCE_SEND: ${{ inputs.force_send }}
+          REPORT_MODE: ${{ github.event_name == 'schedule' && (github.event.schedule == '30 10 * * 1-5' && 'INTRADAY' || 'CLOSE') || inputs.mode || 'CLOSE' }}
+        run: |
+          args=(--mode "$REPORT_MODE")
+          if [ "$SCHEDULED" = "true" ]; then args+=(--scheduled); fi
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          if [ "$FORCE_SEND" = "true" ]; then args+=(--force-send); fi
+          if [ "$REBUILD_PERFORMANCE" = "true" ]; then args+=(--rebuild-performance); fi
+          python -m stockwatch.daily "${args[@]}"
+      - name: Validate and persist notification state
+        if: always() && (steps.report.outcome == 'success' || steps.report.outcome == 'failure')
+        run: |
+          python -c 'from pathlib import Path; from stockwatch.storage import load_state; load_state(Path("data/state.json"))'
+          python -c 'from pathlib import Path; from stockwatch.performance import load_history; load_history(Path("data/performance.json"))'
+          git add -f -- data/state.json
+          if [ -f data/performance.json ]; then git add -f -- data/performance.json; fi
+          if ! git diff --cached --quiet -- data/state.json data/performance.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore: update StockWatch state [skip ci]"
+            pushed=false
+            for attempt in 1 2 3; do
+              git fetch origin main
+              if ! git rebase origin/main; then
+                git rebase --abort
+                echo "云端提醒状态或历史表现存在冲突，请先从 artifact 恢复状态文件，再重新运行。"
+                exit 1
+              fi
+              if git push origin HEAD:main; then pushed=true; break; fi
+            done
+            if [ "$pushed" != "true" ]; then
+              echo "提醒状态或历史表现推送失败，请先从 artifact 恢复状态文件，再重新运行。"
+              exit 1
+            fi
+          fi
+      - name: Save logs and recovery state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stockwatch-run-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            logs/*.log
+            data/state.json
+            data/performance.json
+          retention-days: 3
+          if-no-files-found: ignore
