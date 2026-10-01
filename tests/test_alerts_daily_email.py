@@ -113,8 +113,11 @@ def test_html_escaping_unavailable_and_multipart(portfolio_files, mail_env):
     report = render_report(DAY, portfolio, quotes, data, [Alert("XYZ", "below_95", "<script>alert('x')</script>")])
     assert "<script>" not in report.html and "&lt;script&gt;" in report.html
     message = make_message(report, EmailSettings.from_environment())
-    assert message.get_content_type() == "multipart/alternative"
-    assert [part.get_content_type() for part in message.iter_parts()] == ["text/plain", "text/html"]
+    assert message.get_content_type() == "multipart/mixed"
+    alternatives = next(message.iter_parts())
+    assert alternatives.get_content_type() == "multipart/alternative"
+    assert [part.get_content_type() for part in alternatives.iter_parts()] == ["text/plain", "text/html"]
+    assert len(list(message.iter_attachments())) == 1
     assert "test-secret-must-not-leak" not in message.as_string()
 
 

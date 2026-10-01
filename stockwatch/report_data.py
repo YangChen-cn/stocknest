@@ -103,8 +103,12 @@ def report_data(session, portfolio, quotes, config, alerts, *, mode, generated_a
     }
 
 
+def serialize_data(data):
+    return json.dumps(data, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+
+
 def append_data(text, html, data):
-    payload = json.dumps(data, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+    payload = serialize_data(data)
     block = f"{BEGIN}\n{payload}\n{END}"
     # Text MIME fallback is readable even when a connector strips hidden HTML.
     hidden = f'<div aria-hidden="true" style="display:none!important;visibility:hidden;mso-hide:all;max-height:0;overflow:hidden"><pre>{escape(block)}</pre></div>'

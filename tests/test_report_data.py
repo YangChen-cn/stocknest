@@ -32,10 +32,22 @@ def test_machine_data_in_both_mime_parts_preserves_visible_body(mode):
     report = render_report(DAY, book, quotes, config, [Alert("XYZ", "buy_below_22", "At configured price")],
                            mode=mode, generated_at=NOW, watchlist_rows=rows)
     message = make_message(report, EmailSettings("sender@example.invalid", "not-exported", "reader@example.invalid"))
-    assert message.get_content_type() == "multipart/alternative"
+    assert message.get_content_type() == "multipart/mixed"
     data = payload(message.get_body(preferencelist=("plain",)).get_content())
     html = message.get_body(preferencelist=("html",)).get_content()
     assert data == payload(unescape(html))
+    attachments = list(message.iter_attachments())
+    assert len(attachments) == 1
+    attachment = attachments[0]
+    assert attachment.get_content_type() == "application/json"
+    assert attachment.get_content_disposition() == "attachment"
+    assert attachment.get_filename() == f"stockwatch-{DAY}-{mode.lower()}.json"
+    assert json.loads(attachment.get_payload(decode=True).decode("utf-8")) == data
+    # Parsing the serialized wire message preserves attachment bytes and Chinese notes.
+    from email import policy
+    from email.parser import BytesParser
+    wire = BytesParser(policy=policy.default).parsebytes(message.as_bytes())
+    assert json.loads(next(wire.iter_attachments()).get_payload(decode=True).decode("utf-8")) == data
     assert 'display:none!important' in html and '<script>' not in html
     assert data["mode"] == mode and data["session_timezone"] == "America/New_York"
     assert data["portfolio"]["holdings"][0]["shares"] == "0.25"
@@ -78,3 +90,16 @@ def test_missing_data_and_failure_are_not_zero_or_success():
     assert failure["report_type"] == "error" and not failure["price_alerts_consumed"]
     assert "portfolio" not in failure
     assert numeric(float("nan")) is None and numeric(float("inf")) is None
+
+
+def test_failure_json_attachment_and_legacy_report_compatibility():
+    from stockwatch.reports import Report
+    settings = EmailSettings("sender@example.invalid", "not-exported", "reader@example.invalid")
+    failure = render_failure(DAY, "Unavailable", ["XYZ"], 3, "en")
+    message = make_message(failure, settings)
+    attachment = next(message.iter_attachments())
+    assert attachment.get_filename() == f"stockwatch-{DAY}-close-error.json"
+    assert json.loads(attachment.get_payload(decode=True))["report_type"] == "error"
+    legacy = make_message(Report("Subject", "Plain", "<p>HTML</p>"), settings)
+    assert legacy.get_content_type() == "multipart/alternative"
+    assert not list(legacy.iter_attachments())

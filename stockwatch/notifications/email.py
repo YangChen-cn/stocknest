@@ -44,6 +44,9 @@ def make_message(report: Report, settings: EmailSettings) -> EmailMessage:
     message["To"] = settings.recipient
     message.set_content(report.text)
     message.add_alternative(report.html, subtype="html")
+    if report.data_json is not None:
+        message.add_attachment(report.data_json.encode("utf-8"), maintype="application", subtype="json",
+                               filename=report.data_filename or "stockwatch-report.json", cte="base64")
     return message
 
 

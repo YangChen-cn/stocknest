@@ -8,7 +8,7 @@ from stockwatch.calendar import NY
 from stockwatch.i18n import data_status, language, t
 from stockwatch.providers.base import Quote
 from stockwatch.performance import period_returns
-from stockwatch.report_data import append_data, report_data
+from stockwatch.report_data import append_data, report_data, serialize_data
 
 
 def money(value, *, signed: bool = False, lang: str = "en") -> str:
@@ -30,6 +30,8 @@ class Report:
     subject: str
     text: str
     html: str
+    data_json: str | None = None
+    data_filename: str | None = None
 
 
 def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], config: dict,
@@ -172,7 +174,7 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
     data = report_data(session, portfolio, quotes, config, alerts, mode=mode, generated_at=generated_at,
                        demo=demo, performance=performance, watchlist_rows=watchlist_rows)
     plain, html = append_data("\n".join(lines) + "\n", html, data)
-    return Report(subject, plain, html)
+    return Report(subject, plain, html, serialize_data(data), f"stockwatch-{session}-{mode.lower()}.json")
 
 
 def render_failure(session: date, reason: str, symbols: list[str], attempts: int, lang: str, *, mode="CLOSE") -> Report:
@@ -186,10 +188,11 @@ def render_failure(session: date, reason: str, symbols: list[str], attempts: int
     html = (f'<!doctype html><html lang="{lang}"><meta charset="UTF-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:Arial;padding:16px">'
             + "".join(f"<p>{escape(line)}</p>" for line in lines) + '</body></html>')
-    plain, html = append_data("\n".join(lines), html, {
+    data = {
         "schema": "stockwatch.report", "schema_version": 1, "report_type": "error",
         "session": session.isoformat(), "mode": mode, "reason": reason,
         "unavailable_symbols": symbols, "checks_attempted": attempts,
         "normal_report_marked_sent": False, "price_alerts_consumed": False,
-    })
-    return Report(subject, plain, html)
+    }
+    plain, html = append_data("\n".join(lines), html, data)
+    return Report(subject, plain, html, serialize_data(data), f"stockwatch-{session}-{mode.lower()}-error.json")
