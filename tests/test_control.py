@@ -74,6 +74,9 @@ def test_launchd_plist_and_only_user_requested_commands(tmp_path, monkeypatch):
     assert payload["RunAtLoad"] and payload["KeepAlive"]
     assert "--server.address=127.0.0.1" in payload["ProgramArguments"]
     assert "stockwatch.daily" not in str(payload) and "TOKEN" not in str(payload)
+    assert not control.service_status(tmp_path)["loaded"]
+    assert not any("bootstrap" in call or "kickstart" in call for call in calls)
+    control.start_service(tmp_path)
     assert control.service_status(tmp_path)["running"]
     control.stop_service(tmp_path)
     assert plist.exists() and not control.service_status(tmp_path)["running"]
@@ -109,3 +112,30 @@ def test_email_toggle_skips_send_without_consuming_alerts(portfolio_files):
     state = json.loads(paths["state_path"].read_text())
     assert state["XYZ"]["below_95"]["last_notified"] is None
     assert "last_report_session" not in state.get("_meta", {})
+
+
+def test_enabling_next_login_with_occupied_port_never_starts_second_process(tmp_path, monkeypatch):
+    plist = tmp_path / "agents/dashboard.plist"
+    (tmp_path / "app.py").write_text("# app")
+    monkeypatch.setattr(control.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(control, "_plist_path", lambda: plist)
+    calls = []
+    monkeypatch.setattr(control, "_command", lambda args, **kwargs: calls.append(args) or subprocess.CompletedProcess(args, 113, "", ""))
+    monkeypatch.setattr(control.socket, "create_connection", lambda *a, **kw: __import__("contextlib").nullcontext())
+    control.install_service(tmp_path)
+    assert plist.exists() and calls == []
+    with pytest.raises(ControlError, match="Port 8501"):
+        control.start_service(tmp_path)
+    assert not any("bootstrap" in args or "kickstart" in args for args in calls)
+
+
+def test_cloud_credentials_checks_names_only(tmp_path, monkeypatch):
+    calls = []
+    def command(args, **kwargs):
+        calls.append(args)
+        result = "https://github.com/Example/tracker.git" if args[0] == "git" else '[{"name":"GMAIL_ADDRESS"}]'
+        return subprocess.CompletedProcess(args, 0, result, "")
+    monkeypatch.setattr(control, "_command", command)
+    monkeypatch.setattr(control, "gh_path", lambda: "gh")
+    assert control.cloud_email_status(tmp_path) == {"GMAIL_ADDRESS":True,"GMAIL_APP_PASSWORD":False,"REPORT_EMAIL":False}
+    assert calls[-1][-2:] == ["--json", "name"]

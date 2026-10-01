@@ -80,15 +80,15 @@ git commit -m "chore: configure personal portfolio"
 git push origin main
 ```
 
-The UI sync button also checks GitHub repository privacy before committing. It commits only config/transactions/import audit, pulls remote history/state, and preserves conflicts. A source checkout without a GitHub origin shows unavailable cloud controls and remains usable locally.
+The UI sync button also checks GitHub repository privacy before committing. It commits only config/transactions/import audit (never local Gmail), pulls remote history/state, and preserves conflicts. A source checkout without a GitHub origin shows unavailable cloud controls and remains usable locally.
 
-Add three repository Secrets: `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`, `REPORT_EMAIL`. Actions → StockWatch Daily → Run workflow supports CLOSE/INTRADAY, dry-run, force resend and performance rebuild. Scheduled runs use America/New_York at 10:30 and 18:30 weekdays; NYSE calendar gates holidays, weekends, early closes and incomplete sessions. GitHub scheduling can be delayed.
+Add three repository Secrets: `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`, `REPORT_EMAIL`. Actions → StockWatch Daily → Run workflow supports CLOSE/INTRADAY, dry-run, force resend and performance rebuild. Scheduled runs use America/New_York at 10:30 and 19:00 weekdays; NYSE calendar gates holidays, weekends, early closes and incomplete sessions. GitHub scheduling can be delayed.
 
 CI runs pytest and pip checks separately. Daily jobs use `requirements-runtime.lock` without Streamlit, Plotly or pytest. In a private copy only, the bot commits state/performance and, when HSBC imports exist, transactions/import audit with `[skip ci]`, using `contents: write`, concurrency and no force push. Three-day private artifacts contain logs and recovery files. If sending succeeds but pushing fails, restore the affected artifact state/history/transactions/import audit before rerunning to avoid duplicate mail. This lightweight SMTP/Git setup cannot guarantee exactly-once delivery after a crash.
 
 ## macOS startup
 
-No service is enabled automatically. Stop a manually running Dashboard before enabling login startup (port 8501 must be free):
+No service is enabled automatically. Register next-login startup while the current Dashboard continues running:
 
 ```sh
 python -m stockwatch.control install
@@ -98,7 +98,7 @@ python -m stockwatch.control stop
 python -m stockwatch.control uninstall
 ```
 
-Settings offers the same controls. This per-user launchd service starts the local-only Dashboard **after login**, not email jobs. Stopping it disconnects the page; use the terminal to start again. The generated plist is in `~/Library/LaunchAgents/`; logs stay in ignored `logs/`. Reinstall after moving the checkout/Python environment. Other operating systems retain cloud controls without launchd.
+Settings offers login registration and managed-service stop/removal controls; the Dashboard does not offer a start-service button. This per-user launchd service starts the local-only Dashboard **after login**, not email jobs. Stopping it disconnects the page; use the terminal to start again. The generated plist is in `~/Library/LaunchAgents/`; logs stay in ignored `logs/`. Reinstall after moving the checkout/Python environment. Other operating systems retain cloud controls without launchd.
 
 ## Privacy and development
 
@@ -120,7 +120,7 @@ Tests use synthetic data, fake providers/SMTP and temporary Git repositories; no
 
 ## Close-data checks and HSBC execution imports
 
-CLOSE checks all configured holdings/watchlist quotes for the target NYSE session and a valid previous close before delivery. Missing or stale quotes cause up to **three checks, ten minutes apart** (`--close-attempts 1..3`, `--close-retry-seconds 600..900`). No partial daily report is sent during this wait. Exhaustion sends one error notification per session and exits nonzero; price alerts and the regular report remain pending. A later run can send the recovered report. Dry-run/demo and runs without active email settings do not wait or send error mail. Insufficient 5D/1M history can still show unavailable without blocking a current, otherwise complete report. Runner waiting time counts towards Actions minutes; the workflow has a bounded 65-minute timeout.
+CLOSE checks all configured holdings/watchlist quotes for the target NYSE session and a valid previous close before delivery. Missing or stale quotes cause up to **three checks, two minutes apart** (`--close-attempts 1..3`, `--close-retry-seconds 60..180`). No partial daily report is sent during this wait. Exhaustion sends one error notification per session and exits nonzero; price alerts and the regular report remain pending. A later run can send the recovered report. Dry-run/demo and runs without active email settings do not wait or send error mail. Insufficient 5D/1M history can still show unavailable without blocking a current, otherwise complete report. Runner waiting time counts towards Actions minutes; the workflow has a bounded 45-minute timeout.
 
 HSBC HK email import is optional and disabled in `config.example.yaml`. Enable **HSBC execution sync** in Settings, or set:
 
@@ -129,7 +129,7 @@ imports:
   hsbc:
     enabled: true
     allow_email_date: true
-    lookback_days: 30
+    lookback_days: 3
 ```
 
 The importer uses read-only Gmail IMAP and the existing `GMAIL_ADDRESS` / `GMAIL_APP_PASSWORD` environment variables or Actions Secrets, independently of Codex's Gmail connector. Personal Gmail supports App Password clients with two-step verification; managed accounts may have administrator restrictions ([Google guidance](https://support.google.com/mail/answer/75726?hl=en)). No new token or package is required.
@@ -147,3 +147,25 @@ python -m stockwatch.daily --skip-hsbc --dry-run  # no Gmail access
 Trade IDs are retained in CSV notes as `[HSBC:ID]` and in ignored `data/hsbc_imports.json`. Repeated reads do not duplicate entries; manually deleted/changed entries are not silently restored. An identical unmarked manual row is skipped for explicit reconciliation. Keep the reference when editing fees/notes. CSV is written before the audit file so interrupted writes still retain the deduplication ID.
 
 The private workflow's persistence whitelist includes state, performance, transactions and import audit. Recovery artifacts include all four files, never raw email. After a push conflict, compare and restore **all affected files** before rerunning. Public Actions remain gated to private repositories; never commit real CSV/audit/config files in a public fork. Git Sync only stages configuration, transactions and import audit after checking repository privacy. SMTP acceptance and Git persistence still cannot guarantee exactly-once delivery across crashes.
+
+
+## Optional local Gmail and login registration
+
+Cloud email uses the private repository's GitHub Actions Secrets. Local Gmail is optional; an unconfigured local profile says nothing about cloud health. **Check cloud Gmail Secrets** lists Secret names only and never reads or writes their values.
+
+Dashboard and Settings provide a collapsed **Advanced: optional local Gmail** form for Gmail Address, Report Email and App Password. A blank recipient defaults to the sender; a blank password retains an existing saved local password. Saving sends no test mail. Remove the profile to stop using it; existing environment variables remain in effect and always take precedence.
+
+Local credentials are plaintext in `.stockwatch/gmail.json`, atomically written with mode 0600 in a 0700 directory, ignored by Git and excluded from Git Sync. They only supply local SMTP / read-only HSBC access for this checkout. Passwords are never prefilled and the input is cleared after saving. Use environment variables instead if you prefer no persisted credentials. Cloud Secrets are completely independent.
+
+**Enable login startup** only saves the next-login launchd registration. It neither starts a second process nor requires the currently open Dashboard to release 8501. There is no start-service button inside the Dashboard. To switch immediately, stop the manual process with Ctrl+C in its terminal, then run `python -m stockwatch.control start`. Port occupancy and ownership checks remain in the terminal start path; no process is automatically killed. Managed service stop retains next-login startup, while disabling removes the registration.
+
+CLOSE now runs at **19:00 America/New_York**; INTRADAY remains 10:30. Missing close quotes allow up to three checks with 120-second waits (CLI 60..180 seconds), rather than twenty minutes of idle runner time. Daily imports check at most three days. Manual dashboard sync, workflow `sync_only` with `hsbc_lookback_days`, or `python -m stockwatch.daily --sync-only --lookback-days 30 --dry-run` can inspect a longer history without increasing the daily window. Dependency setup/network requests still take time, and scheduling is not precise.
+
+
+## Search, holding notes and page responsiveness
+
+Stock search runs when a changed name/ticker is submitted with Enter or focus leaves the input, with a search button for retries. New results replace the previous selection instead of retaining an unrelated ticker. Only the selected instrument's latest available price, daily move, 52-week range and quote date are requested. Quotes are reference information, never automatically treated as execution prices; selecting a different symbol resets the execution price and fee fields. Transactions offers a direct add-to-watchlist button without creating a trade.
+
+Holdings provides editable thesis/notes, even when empty. Notes preserve existing watchlist settings and do not require targets/alerts. Nonempty holding notes appear in both text/HTML emails; blank notes are omitted and HTML is escaped. Holdings/Dashboard price charts list current holdings only; pure watched stocks live on Watchlist & Alerts.
+
+Dashboard/Holdings request holdings and opening-position prices only, avoiding unused candidate quotes. The candidate pool reuses the same provider's already-fetched daily history for 5D/1M analytics. Five-minute quote caches and refresh scoped to the active page reduce repeat requests; stock-name searches keep their separate cache. Free-provider/network latency can still affect a first load.

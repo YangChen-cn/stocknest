@@ -30,3 +30,10 @@ def portfolio_files(tmp_path):
     state.write_text("{}\n")
     return dict(config_path=config, transactions_path=transactions, state_path=state,
                 output_dir=tmp_path / "outputs", provider=FakeProvider(), session=DAY)
+
+
+@pytest.fixture(autouse=True)
+def isolate_optional_local_gmail(tmp_path, monkeypatch):
+    """A developer's saved local Gmail must never influence offline tests."""
+    from stockwatch.notifications import local
+    monkeypatch.setattr(local, "ROOT", tmp_path / "local-profile")

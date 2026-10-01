@@ -1,5 +1,4 @@
-"""Gmail SMTP delivery. No credentials in config, logs or exception messages."""
-import os
+"""Gmail SMTP delivery. No credentials in portfolio config, logs or exception messages."""
 import smtplib
 import ssl
 from dataclasses import dataclass
@@ -9,6 +8,7 @@ from email.utils import parseaddr
 from stockwatch.i18n import UserFacingError
 
 from stockwatch.reports import Report
+from stockwatch.notifications.local import credentials
 
 ENV_NAMES = ("GMAIL_ADDRESS", "GMAIL_APP_PASSWORD", "REPORT_EMAIL")
 
@@ -21,7 +21,8 @@ class EmailSettings:
 
     @classmethod
     def from_environment(cls) -> "EmailSettings | None":
-        values = [os.environ.get(name, "").strip() for name in ENV_NAMES]
+        profile = credentials()
+        values = [profile[name] for name in ENV_NAMES]
         return cls(values[0], "".join(values[1].split()), values[2]) if all(values) else None
 
 
@@ -30,7 +31,7 @@ class EmailDeliveryError(UserFacingError, RuntimeError):
 
 
 def configuration_status() -> dict[str, bool]:
-    return {name: bool(os.environ.get(name, "").strip()) for name in ENV_NAMES}
+    return {name: bool(value) for name, value in credentials().items()}
 
 
 def make_message(report: Report, settings: EmailSettings) -> EmailMessage:

@@ -30,7 +30,7 @@ def run(*, config_path: Path, transactions_path: Path, state_path: Path, output_
         provider: MarketDataProvider, session: date, dry_run: bool = False, force_send: bool = False,
         demo: bool = False, sender: Callable = send_report, mode: str = "CLOSE",
         now: datetime | None = None, performance_path: Path | None = None,
-        rebuild_performance: bool = False, close_attempts: int = 3, close_retry_seconds: float = 600,
+        rebuild_performance: bool = False, close_attempts: int = 3, close_retry_seconds: float = 120,
         sleeper: Callable = time.sleep, importer: Callable = sync_hsbc,
         import_state_path: Path | None = None) -> int:
     session_key = report_session_key(mode)
@@ -40,7 +40,7 @@ def run(*, config_path: Path, transactions_path: Path, state_path: Path, output_
     if mode == "INTRADAY" and not demo and active_session(now) != session:
         logger.info(t("No active NYSE session; intraday run skipped", lang))
         return 0
-    if not 1 <= close_attempts <= 3 or not 0 <= close_retry_seconds <= 900:
+    if not 1 <= close_attempts <= 3 or not 0 <= close_retry_seconds <= 180:
         raise ValueError("Invalid close retry limits")
     state = load_state(state_path)
     settings = EmailSettings.from_environment()
@@ -49,7 +49,10 @@ def run(*, config_path: Path, transactions_path: Path, state_path: Path, output_
     import_state_path = import_state_path or state_path.parent / "hsbc_imports.json"
     if not demo:
         try:
-            result = importer(config, transactions_path, import_state_path, dry_run=dry_run)
+            import_config = deepcopy(config)
+            options = import_config.setdefault("imports", {}).setdefault("hsbc", {})
+            options["lookback_days"] = min(3, options.get("lookback_days", 3))
+            result = importer(import_config, transactions_path, import_state_path, dry_run=dry_run)
             if not result.get("disabled"):
                 logger.info(t("HSBC sync: {imported} imported, {duplicates} duplicates, {skipped} skipped", lang, **result))
         except (HSBCSyncError, ValidationError, OSError) as exc:
@@ -169,9 +172,10 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--performance", type=Path, default=ROOT / "data/performance.json")
     result.add_argument("--rebuild-performance", action="store_true", help="重新回补已完成 session 的持仓历史")
     result.add_argument("--close-attempts", type=int, choices=range(1, 4), default=3)
-    result.add_argument("--close-retry-seconds", type=int, choices=range(600, 901), default=600,
-                        help="收盘缺价重试间隔，默认600秒，最大900秒")
+    result.add_argument("--close-retry-seconds", type=int, metavar="SECONDS", choices=range(60, 181), default=120,
+                        help="收盘缺价重试间隔，默认120秒，可选60至180秒")
     result.add_argument("--import-state", type=Path, default=None)
+    result.add_argument("--lookback-days", type=int, metavar="DAYS", choices=range(1, 366), default=None, help="仅 --sync-only 的历史补录范围，不修改日常配置")
     result.add_argument("--sync-only", action="store_true", help="仅同步汇丰成交，不生成或发送日报")
     result.add_argument("--skip-hsbc", action="store_true", help="本次不读取 Gmail 或导入交易")
     result.add_argument("--mode", choices=["CLOSE", "INTRADAY"], default="CLOSE", help="CLOSE 收盘日报；INTRADAY 仅在正常交易时段生成盘中快照")
@@ -198,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             config = load_config(config_path)
             try:
-                result = sync_hsbc(config, args.transactions, args.import_state or args.state.parent / "hsbc_imports.json", dry_run=args.dry_run)
+                result = sync_hsbc(config, args.transactions, args.import_state or args.state.parent / "hsbc_imports.json", dry_run=args.dry_run, lookback_days=args.lookback_days)
             except (HSBCSyncError, OSError) as exc:
                 logger.error("HSBC sync failed (%s)", type(exc).__name__)
                 return 1

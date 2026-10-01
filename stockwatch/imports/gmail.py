@@ -1,13 +1,13 @@
-"""Read-only Gmail IMAP using existing app-password environment variables."""
+"""Read-only Gmail IMAP using environment variables or an optional private local profile."""
 import imaplib
 import logging
-import os
 import re
 import ssl
 from datetime import datetime, timedelta, timezone
 from email import policy
 from email.parser import BytesParser
 
+from stockwatch.notifications.local import credentials
 from stockwatch.imports.hsbc import BankMessage, HSBCSyncError, SENDER, import_messages
 
 logger = logging.getLogger(__name__)
@@ -29,9 +29,10 @@ def message_from_bytes(raw: bytes) -> BankMessage:
                        str(message.get("Message-ID", "")))
 
 
-def read_messages(*, lookback_days=30, now=None, limit=200) -> list[BankMessage]:
-    address = os.environ.get("GMAIL_ADDRESS", "").strip()
-    password = "".join(os.environ.get("GMAIL_APP_PASSWORD", "").split())
+def read_messages(*, lookback_days=3, now=None, limit=200) -> list[BankMessage]:
+    values = credentials()
+    address = values["GMAIL_ADDRESS"]
+    password = "".join(values["GMAIL_APP_PASSWORD"].split())
     if not address or not password:
         raise HSBCSyncError("Gmail credentials missing; configure the existing Gmail environment variables.")
     now = now or datetime.now(timezone.utc)
@@ -71,9 +72,9 @@ def read_messages(*, lookback_days=30, now=None, limit=200) -> list[BankMessage]
         raise HSBCSyncError("Gmail read-only sync failed; check App Password and IMAP access.") from None
 
 
-def sync_hsbc(config, ledger, state_path, *, dry_run=False, reader=None):
+def sync_hsbc(config, ledger, state_path, *, dry_run=False, reader=None, lookback_days=None):
     settings = config.get("imports", {}).get("hsbc", {})
     if not settings.get("enabled", False):
         return {"imported": 0, "duplicates": 0, "skipped": 0, "disabled": True}
-    messages = (reader or read_messages)(lookback_days=settings.get("lookback_days", 30))
+    messages = (reader or read_messages)(lookback_days=lookback_days if lookback_days is not None else settings.get("lookback_days", 3))
     return import_messages(messages, ledger, state_path, allow_email_date=settings.get("allow_email_date", True), dry_run=dry_run)

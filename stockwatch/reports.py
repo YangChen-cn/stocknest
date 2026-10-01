@@ -82,6 +82,9 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
                           tr("Total {value}", value=p(row["return_pct"])), tr("Weight {value}", value=p(row["weight_pct"], signed=False))])
         elif quotes[row["symbol"]].price_at:
             lines.append(tr("Price time: {time} New York", time=quotes[row["symbol"]].price_at.astimezone(NY).strftime("%H:%M %Z")))
+        thesis = config["watchlist"].get(row["symbol"], {}).get("thesis", "").strip()
+        if thesis:
+            lines.append(tr("Thesis") + ": " + thesis)
         color = "#137333" if row["unrealized_pl"] is not None and row["unrealized_pl"] >= 0 else "#b3261e"
         cells = [
             f"<td style='padding:12px 6px;border-bottom:1px solid #eee'><strong>{escape(row['symbol'])}</strong><br><span style='color:#666'>{escape(tr('{shares} shares', shares=row['shares']))}</span></td>",
@@ -94,6 +97,8 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
             stamp = quotes[row["symbol"]].price_at
             cells.append(f"<td style='padding:12px 6px;border-bottom:1px solid #eee'>{escape(stamp.astimezone(NY).strftime('%H:%M %Z') if stamp else tr('Data unavailable'))}</td>")
         holding_html.append("<tr>" + "".join(cells) + "</tr>")
+        if thesis:
+            holding_html.append(f"<tr><td colspan='{3 if intraday else 4}' style='padding:0 6px 10px;color:#666;font-size:13px;white-space:pre-wrap;word-break:break-word'>{escape(tr('Thesis'))}: {escape(thesis)}</td></tr>")
     if not portfolio["holdings"]:
         lines.append(tr("No current holdings."))
         holding_html.append(f"<tr><td colspan='{3 if intraday else 4}' style='padding:12px'>{escape(tr('No current holdings.'))}</td></tr>")

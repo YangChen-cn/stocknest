@@ -164,7 +164,7 @@ def validate_config(raw: Any) -> dict:
             raise ValidationError("Invalid HSBC import settings.")
         if any(not isinstance(hsbc.get(key, key == "allow_email_date"), bool) for key in ("enabled", "allow_email_date")):
             raise ValidationError("HSBC import switches must be true or false.")
-        days = hsbc.get("lookback_days", 30)
+        days = hsbc.get("lookback_days", 3)
         if isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= 365:
             raise ValidationError("HSBC lookback must be between 1 and 365 days.")
         clean["imports"] = {"hsbc": {"enabled": hsbc.get("enabled", False),

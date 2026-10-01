@@ -153,3 +153,18 @@ def test_incomplete_valuation_warning_precedes_summary():
     warning = "行情数据缺失，本次报告无法计算完整的持仓估值。"
     assert warning in report.html and warning in report.text
     assert report.html.index(warning) < report.html.index("持仓成本")
+
+
+@pytest.mark.parametrize("mode", ["CLOSE", "INTRADAY"])
+def test_optional_holding_thesis_is_in_mail_and_html_escaped(mode):
+    data=config()
+    quotes={"XYZ":Quote("XYZ",price=51,previous_close=50,session=DAY)}
+    book=calculate(positions([Transaction(DAY,"XYZ","BUY",Decimal(1),Decimal(50))],DAY),quotes)
+    data["watchlist"]["XYZ"]["thesis"]="<script>synthetic note & details</script>"
+    report=render_report(DAY,book,quotes,data,[],mode=mode)
+    assert "synthetic note & details" in report.text
+    assert "&lt;script&gt;synthetic note &amp; details&lt;/script&gt;" in report.html
+    assert "<script>" not in report.html
+    data["watchlist"]["XYZ"]["thesis"]="  "
+    report=render_report(DAY,book,quotes,data,[],mode=mode)
+    assert "Thesis:" not in report.text and "synthetic note" not in report.html

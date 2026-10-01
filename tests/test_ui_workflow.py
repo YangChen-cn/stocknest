@@ -14,6 +14,10 @@ def app(tmp_path, monkeypatch):
     save_transactions(tmp_path / "data/transactions.csv", [])
     (tmp_path / "examples").symlink_to(ROOT / "examples", target_is_directory=True)
     monkeypatch.setattr(ui, "ROOT", tmp_path)
+    from stockwatch.providers.base import Quote
+    monkeypatch.setattr(ui, "cached_instrument_quote", lambda symbol, demo: Quote(symbol, price=20, previous_close=19, year_high=25, year_low=10))
+    # Keep UI navigation offline; detailed provider reuse is checked by provider tests.
+    monkeypatch.setattr(ui, "cached_watchlist_snapshot", lambda config, rows, day, demo: (*ui.cached_snapshot(config, rows, day, demo), {}))
     ui.cached_snapshot.clear()
     ui.cached_history.clear()
     return AppTest.from_file(str(ROOT / "app.py"), default_timeout=15), tmp_path
@@ -85,6 +89,7 @@ def test_search_failure_manual_fallback(app, monkeypatch):
     app_test, root = app
     app_test.run()
     app_test.sidebar.radio[0].set_value("Transactions").run()
+    next(widget for widget in app_test.text_input if widget.label == "Stock name or ticker").set_value("XYZ")
     next(button for button in app_test.button if button.label == "Search stocks").click().run()
     assert "temporarily unavailable" in app_test.warning[0].value
     app_test.checkbox[0].set_value(True).run()
@@ -195,7 +200,7 @@ def test_workflow_permissions_schedule_and_file_whitelist():
     assert workflow["permissions"] == {"contents": "write"}
     assert workflow["on"]["schedule"] == [
         {"cron": "30 10 * * 1-5", "timezone": "America/New_York"},
-        {"cron": "30 18 * * 1-5", "timezone": "America/New_York"}]
+        {"cron": "0 19 * * 1-5", "timezone": "America/New_York"}]
     assert set(workflow["on"]) == {"schedule", "workflow_dispatch"}
     assert workflow["concurrency"]["cancel-in-progress"] == "false"
     steps = workflow["jobs"]["daily"]["steps"]
@@ -261,5 +266,69 @@ def test_hsbc_settings_and_cloud_sync_only_entry(app, monkeypatch):
     monkeypatch.setattr("stockwatch.ui.configuration_status", lambda:{"GMAIL_ADDRESS":False,"GMAIL_APP_PASSWORD":False,"REPORT_EMAIL":False})
     monkeypatch.setattr("stockwatch.ui.trigger_workflow", lambda *a,**kw:calls.append(kw))
     next(button for button in app_test.button if button.label=="立即同步 HSBC 成交记录").click().run()
-    assert not app_test.exception and calls==[{"dry_run":False,"sync_only":True}]
+    assert not app_test.exception and calls==[{"dry_run":False,"sync_only":True,"lookback_days":3}]
     assert "不发送日报" in app_test.success[0].value
+
+
+def test_local_gmail_form_save_masks_password_and_does_not_change_cloud(app):
+    app_test,root=app
+    app_test.run()
+    assert not any(button.label=="Start service" for button in app_test.button)
+    next(widget for widget in app_test.text_input if widget.label=="Local Gmail Address").set_value("sender@example.com")
+    next(widget for widget in app_test.text_input if widget.label=="Local Report Email").set_value("recipient@example.com")
+    next(widget for widget in app_test.text_input if widget.label=="Local Gmail App Password").set_value("synthetic-password")
+    original=(root/"config.yaml").read_bytes()
+    next(button for button in app_test.button if button.label=="Save local Gmail").click().run()
+    assert not app_test.exception
+    from stockwatch.notifications.local import load_local
+    assert load_local(root)["GMAIL_ADDRESS"]=="sender@example.com"
+    assert (root/"config.yaml").read_bytes()==original
+    assert next(widget for widget in app_test.text_input if widget.label=="Local Gmail App Password").value==""
+    assert all("synthetic-password" not in widget.value for widget in app_test.success)
+    next(button for button in app_test.button if button.label=="Remove saved local Gmail").click().run()
+    assert not app_test.exception and not (root/".stockwatch/gmail.json").exists()
+    app_test.sidebar.radio[0].set_value("Settings").run()
+    assert not any(button.label=="Start service" for button in app_test.button)
+
+
+def test_search_changes_selection_shows_quote_and_resets_execution_price(app, monkeypatch):
+    from stockwatch import ui
+    from stockwatch.providers.base import Instrument
+    monkeypatch.setattr(ui,"cached_search",lambda query,demo:[Instrument("NEW" if query=="second" else "XYZ","Example","NASDAQ","EQUITY")])
+    app_test,_=app
+    app_test.run()
+    app_test.sidebar.radio[0].set_value("Transactions").run()
+    next(w for w in app_test.text_input if w.label=="Stock name or ticker").set_value("first").run()
+    assert next(w for w in app_test.selectbox if w.label=="Choose stock / ETF").value=="XYZ"
+    assert any(w.label=="Current Price" and w.value=="$20.00" for w in app_test.metric)
+    next(w for w in app_test.number_input if w.label=="Execution price (USD)").set_value(18)
+    next(w for w in app_test.text_input if w.label=="Stock name or ticker").set_value("second").run()
+    assert next(w for w in app_test.selectbox if w.label=="Choose stock / ETF").value=="NEW"
+    assert next(w for w in app_test.number_input if w.label=="Execution price (USD)").value==0
+
+
+def test_holding_notes_edit_and_charts_exclude_watch_only_symbols(app, monkeypatch):
+    from stockwatch import ui
+    from stockwatch.portfolio import calculate,positions
+    from stockwatch.providers.base import Quote
+    from datetime import date
+    app_test,root=app
+    save_transactions(root/"data/transactions.csv",[{"date":"2026-09-28","symbol":"XYZ","side":"BUY","shares":"1","price":"10"}])
+    save_config(root/"config.yaml",{"portfolio":{},"watchlist":{"WATCH":{"thesis":"observation"}}})
+    def snapshot(config,rows,day,demo):
+        assert config["watchlist"]=={}
+        from stockwatch.storage import validate_transactions
+        quotes={"XYZ":Quote("XYZ",price=12,previous_close=11)}
+        return calculate(positions(validate_transactions(rows),date(2026,10,1)),quotes),quotes
+    snapshot.clear=lambda:None
+    monkeypatch.setattr(ui,"cached_snapshot",snapshot)
+    selected=[]
+    monkeypatch.setattr(ui,"chart_prices",lambda symbols,*a:selected.append(symbols))
+    app_test.run()
+    app_test.sidebar.radio[0].set_value("Holdings").run()
+    next(w for w in app_test.text_area if w.label=="Thesis").set_value("Personal note")
+    next(w for w in app_test.button if w.label=="Save holding notes").click().run()
+    assert not app_test.exception
+    assert load_config(root/"config.yaml")["watchlist"]["XYZ"]["thesis"]=="Personal note"
+    assert all(symbols==["XYZ"] for symbols in selected)
+    assert load_config(root/"config.yaml")["watchlist"]["WATCH"]["thesis"]=="observation"

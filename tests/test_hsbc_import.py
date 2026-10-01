@@ -149,7 +149,7 @@ def test_mime_charset_and_imap_is_read_only(monkeypatch):
 
 def test_import_settings_validate():
     options = validate_config({"imports":{"hsbc":{"enabled": True}}, "portfolio": {}, "watchlist": {}})["imports"]["hsbc"]
-    assert options == {"enabled":True,"allow_email_date":True,"lookback_days":30}
+    assert options == {"enabled":True,"allow_email_date":True,"lookback_days":3}
     with pytest.raises(ValidationError):
         validate_config({"imports":{"hsbc":{"lookback_days": True}}})
 

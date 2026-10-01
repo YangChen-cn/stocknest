@@ -12,11 +12,12 @@ from stockwatch.imports.hsbc import HSBCSyncError
 from stockwatch.calendar import current_price_session, latest_session
 from stockwatch.history import period_start
 from stockwatch.performance import DEFAULT_BENCHMARK, build_history, load_history, fingerprint, period_returns
-from stockwatch.control import (ControlError, workflow_status, set_workflow_enabled, trigger_workflow,
-                                service_status, install_service, start_service, stop_service, uninstall_service)
+from stockwatch.control import (ControlError, cloud_email_status, workflow_status, set_workflow_enabled, trigger_workflow,
+                                service_status, install_service, stop_service, uninstall_service)
 from stockwatch.git_sync import SyncError, sync
 from stockwatch.i18n import LANGUAGES, data_status, error_message, language, t
 from stockwatch.notifications.email import configuration_status
+from stockwatch.notifications.local import credentials, load_local, save_local, remove_local
 from stockwatch.providers.base import DataUnavailable, PERIODS
 from stockwatch.providers.demo import DemoProvider
 from stockwatch.providers.openbb_provider import OpenBBProvider
@@ -74,29 +75,78 @@ def cached_candidate_history(symbols: tuple[str, ...], as_of, demo: bool):
     return histories
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def cached_instrument_quote(symbol, demo):
+    provider = DemoProvider() if demo else OpenBBProvider()
+    day = DemoProvider().session if demo else current_price_session()
+    _, quotes = snapshot({"portfolio": {"base_currency": "USD"}, "watchlist": {symbol: {}}}, [], provider, day, closing=demo)
+    return quotes[symbol]
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def cached_watchlist_snapshot(config, rows, as_of, demo):
+    # Quotes already fetch a year's daily bars. Reuse this provider's range cache.
+    provider = DemoProvider() if demo else OpenBBProvider()
+    portfolio, quotes = snapshot(config, validate_transactions(rows), provider, as_of, closing=demo)
+    end = DemoProvider().session if demo else latest_session()
+    histories = {}
+    for symbol in config["watchlist"]:
+        quote = quotes.get(symbol)
+        if not quote or quote.error or quote.price is None:
+            continue
+        try:
+            histories[symbol] = provider.get_history(symbol, "1M", end)
+        except Exception:
+            histories[symbol] = None
+    return portfolio, quotes, histories
+
+
 def symbol_picker(key: str, symbols: list[str], demo: bool) -> str | None:
-    with st.form(f"{key}_search"):
-        query = st.text_input(text("Stock name or ticker"), placeholder=text("e.g. Apple, Tesla, 苹果 or an ETF ticker"), max_chars=100)
-        searched = st.form_submit_button(text("Search stocks"))
-    if searched:
+    query = st.text_input(text("Stock name or ticker"), placeholder=text("e.g. Apple, Tesla, 苹果 or an ETF ticker"), max_chars=100, key=f"{key}_query")
+    searched = st.button(text("Search stocks"), key=f"{key}_search_button")
+    st.caption(text("Enter a name and press Enter or leave the input to search. Search results replace the previous selection."))
+    changed = query.strip() != st.session_state.get(f"{key}_last_query", "")
+    if searched or changed:
+        st.session_state[f"{key}_last_query"] = query.strip()
+        st.session_state[f"{key}_manual"] = False
         try:
             with st.spinner(text("Searching stocks…")):
-                results = cached_search(query, demo)
+                results = cached_search(query, demo) if query.strip() else []
             st.session_state[f"{key}_results"] = results
+            st.session_state[f"{key}_selection"] = results[0].symbol if results else None
             if not results:
                 st.info(text("No US stocks or ETFs found. Try an English name or enter a ticker manually."))
         except DataUnavailable:
             st.session_state[f"{key}_results"] = []
+            st.session_state[f"{key}_selection"] = None
             st.warning(text("Stock search is temporarily unavailable. Choose an existing ticker or enter one manually."))
     results = st.session_state.get(f"{key}_results", [])
+    searching = bool(query.strip())
     labels = {item.symbol: f"{item.symbol} · {item.name} · {item.exchange} · {text(item.kind)}" for item in results}
-    options = list(dict.fromkeys([item.symbol for item in results] + sorted(symbols)))
+    options = list(dict.fromkeys(item.symbol for item in results)) if searching else sorted(set(symbols))
     for symbol in symbols:
         labels.setdefault(symbol, f"{symbol} · {text('In your portfolio or watchlist')}")
+    if searching and results:
+        st.caption(text("Search results: {count}", count=len(results)))
     if st.checkbox(text("Enter ticker manually"), key=f"{key}_manual"):
-        return st.text_input(text("Symbol"), key=f"{key}_ticker", max_chars=20).strip().upper() or None
-    return st.selectbox(text("Choose stock / ETF"), options, index=0 if options else None,
-                        format_func=labels.__getitem__, placeholder=text("Search above to see options"), key=f"{key}_selection")
+        symbol = st.text_input(text("Symbol"), key=f"{key}_ticker", max_chars=20).strip().upper() or None
+    else:
+        if st.session_state.get(f"{key}_selection") not in options:
+            st.session_state[f"{key}_selection"] = None
+        symbol = st.selectbox(text("Choose stock / ETF"), options, index=0 if key == "benchmark" and options else None,
+                              format_func=labels.__getitem__, placeholder=text("Search above to see options"), key=f"{key}_selection")
+    if symbol and key != "benchmark":
+        with st.spinner(text("Loading selected stock…")):
+            quote = cached_instrument_quote(symbol, demo)
+        st.markdown(f"**{symbol}**")
+        cols = st.columns(3)
+        cols[0].metric(text("Current Price"), money(quote.price))
+        cols[1].metric(text("Daily %"), percent(quote.daily_move_pct))
+        cols[2].metric(text("52-week range"), f"{money(quote.year_low)} – {money(quote.year_high)}")
+        st.caption(text("Quote date: {date}. Latest available regular-session data; not a guaranteed real-time price.", date=str(quote.session or "—")))
+        if quote.error:
+            st.info(text("Quote unavailable; you can still add this stock using your actual execution details."))
+    return symbol
 
 
 def holdings_table(portfolio: dict) -> pd.DataFrame:
@@ -141,14 +191,26 @@ def chart_prices(symbols: list[str], as_of, demo: bool):
 def transactions_page(path: Path, transactions, config: dict, demo: bool):
     st.subheader(text("Add a transaction"))
     symbol = symbol_picker("trade", sorted({tx.symbol for tx in transactions} | set(config["watchlist"])), demo)
+    if symbol:
+        st.caption(text("Recording transaction for {symbol}. Enter the actual fill price; the quote above is for reference only.", symbol=symbol))
+        if symbol not in config["watchlist"] and st.button(text("Add selected stock to watchlist"), disabled=demo):
+            try:
+                updated = load_config(ROOT / "config.yaml")
+                updated["watchlist"].setdefault(symbol, {"thesis": "", "status": "watching"})
+                save_config(ROOT / "config.yaml", updated)
+                cached_snapshot.clear()
+                st.session_state["_stockwatch_notice"] = "Watchlist saved locally. Sync with GitHub to update daily alerts."
+                st.rerun()
+            except (ValidationError, OSError) as exc:
+                st.error(localized_error(exc) if isinstance(exc, ValidationError) else text("Save failed; original file preserved."))
     with st.form("add_transaction_form"):
         left, right = st.columns(2)
-        day = left.date_input(text("Date"), value=datetime.now(ZoneInfo("Asia/Hong_Kong")).date())
+        day = left.date_input(text("Date"), value=datetime.now(ZoneInfo("America/New_York")).date())
         side_labels = {"BUY": text("Buy"), "SELL": text("Sell")}
         side = right.selectbox(text("Transaction direction"), list(side_labels), format_func=side_labels.__getitem__)
         shares = left.number_input(text("Shares"), min_value=0.000001, value=1.0, step=1.0, format="%.6f")
-        price = right.number_input(text("Execution price (USD)"), min_value=0.0, value=0.0, step=0.01, format="%.4f")
-        fee = st.number_input(text("Fee (USD)"), min_value=0.0, value=0.0, step=0.01)
+        price = right.number_input(text("Execution price (USD)"), min_value=0.0, value=0.0, step=0.01, format="%.4f", key=f"execution_price_{symbol}")
+        fee = st.number_input(text("Fee (USD)"), min_value=0.0, value=0.0, step=0.01, key=f"trade_fee_{symbol}")
         st.caption(text("Trade dates use New York market dates. Fees default to zero."))
         note = st.text_input(text("Note"))
         added = st.form_submit_button(text("Add transaction"), disabled=demo or not symbol)
@@ -187,12 +249,13 @@ def transactions_page(path: Path, transactions, config: dict, demo: bool):
             st.error(localized_error(exc) if isinstance(exc, ValidationError) else text("Save failed; original file preserved."))
 
 
-def watchlist_page(path: Path, config: dict, quotes: dict, demo: bool, portfolio: dict, as_of):
+def watchlist_page(path: Path, config: dict, quotes: dict, demo: bool, portfolio: dict, as_of, histories=None):
     st.subheader(text("Candidate pool"))
     if config["watchlist"]:
         symbols = tuple(symbol for symbol in config["watchlist"] if quotes.get(symbol) and quotes[symbol].price is not None and not quotes[symbol].error)
-        with st.spinner(text("Loading candidate history…")):
-            histories = cached_candidate_history(symbols, as_of, demo)
+        if histories is None:
+            with st.spinner(text("Loading candidate history…")):
+                histories = cached_candidate_history(symbols, as_of, demo)
         rows = candidate_rows(config, {row["symbol"] for row in portfolio["holdings"]}, quotes, histories, as_of)
         for is_held, label in ((False, "Unheld candidates"), (True, "Watched stocks you hold")):
             selected = []
@@ -310,6 +373,46 @@ def email_control(path, config, demo):
     st.caption(text("This switch controls sending only; reports and history continue. Sync to apply it in GitHub Actions."))
 
 
+
+def gmail_controls(demo):
+    st.caption(text("Cloud Gmail uses GitHub Actions Secrets. Local Gmail is optional and does not indicate cloud health."))
+    if st.button(text("Check cloud Gmail Secrets"), disabled=demo):
+        try:
+            st.session_state["_cloud_gmail_status"] = cloud_email_status(ROOT)
+        except ControlError:
+            st.session_state.pop("_cloud_gmail_status", None)
+            st.info(text("Cloud Secrets could not be checked. Use GitHub repository settings; local Gmail is independent."))
+    cloud = st.session_state.get("_cloud_gmail_status") if not demo else None
+    if cloud is not None:
+        st.write(text("Cloud Gmail Secrets") + ": " + ", ".join(f"{name}: {text('Configured' if ready else 'Missing')}" for name, ready in cloud.items()))
+    with st.expander(text("Advanced: optional local Gmail"), expanded=False):
+        st.caption(text("Used only for local email and direct HSBC sync. Saved as a plaintext file readable only by your user, ignored by Git; it never updates cloud Secrets."))
+        st.caption(text("Environment variables take precedence. Leave App Password blank to retain the saved local password; it is never displayed."))
+        try:
+            values = {} if demo else credentials(ROOT)
+            local = {} if demo else load_local(ROOT)
+            status = {name: bool(value) for name, value in values.items()}
+            st.write(text("Local Gmail ready" if status and all(status.values()) else "Local Gmail not configured (optional)"))
+            if st.session_state.pop("_clear_local_password", False):
+                st.session_state["local_gmail_password"] = ""
+            with st.form("local_gmail"):
+                address = st.text_input(text("Local Gmail Address"), value=local.get("GMAIL_ADDRESS", values.get("GMAIL_ADDRESS", "")))
+                recipient = st.text_input(text("Local Report Email"), value=local.get("REPORT_EMAIL", values.get("REPORT_EMAIL", "")))
+                password = st.text_input(text("Local Gmail App Password"), type="password", key="local_gmail_password")
+                saved = st.form_submit_button(text("Save local Gmail"), disabled=demo)
+            if saved:
+                save_local(address, recipient, password, ROOT)
+                st.session_state["_clear_local_password"] = True
+                st.session_state["_stockwatch_notice"] = "Local Gmail saved. Cloud Secrets were not changed."
+                st.rerun()
+            if st.button(text("Remove saved local Gmail"), disabled=demo or not local):
+                remove_local(ROOT)
+                st.session_state["_clear_local_password"] = True
+                st.session_state["_stockwatch_notice"] = "Local Gmail removed. Environment variables and cloud Secrets were not changed."
+                st.rerun()
+        except (ValidationError, OSError) as exc:
+            st.error(localized_error(exc) if not isinstance(exc, OSError) else text("Save failed; original file preserved."))
+
 def hsbc_control(path, config, demo, *, settings=False):
     options = config.get("imports", {}).get("hsbc", {})
     if settings:
@@ -317,7 +420,7 @@ def hsbc_control(path, config, demo, *, settings=False):
             enabled = st.checkbox(text("Automatically import completed HSBC trades"), value=options.get("enabled", False))
             allow_date = st.checkbox(text("Use the email New York date when execution date is missing"), value=options.get("allow_email_date", True))
             st.caption(text("Email date is an estimate, not a confirmed execution date. Delayed emails can have the wrong trade date."))
-            days = st.number_input(text("HSBC email lookback (days)"), min_value=1, max_value=365, value=options.get("lookback_days", 30))
+            days = st.number_input(text("HSBC email lookback (days)"), min_value=1, max_value=365, value=options.get("lookback_days", 3))
             saved = st.form_submit_button(text("Save HSBC settings"), disabled=demo)
         if saved:
             try:
@@ -328,17 +431,19 @@ def hsbc_control(path, config, demo, *, settings=False):
                 st.rerun()
             except (ValidationError, OSError) as exc:
                 st.error(localized_error(exc) if not isinstance(exc, OSError) else text("Save failed; original file preserved."))
+    manual_days = st.number_input(text("Manual HSBC lookback (days)"), min_value=1, max_value=365, value=options.get("lookback_days", 3), key="hsbc_manual_days")
+    st.caption(text("Daily reports check at most three days. This window is for one-time manual history imports."))
     if st.button(text("Sync HSBC trades now"), disabled=demo or not options.get("enabled", False), key="hsbc_now"):
         try:
             present = configuration_status()
             if present["GMAIL_ADDRESS"] and present["GMAIL_APP_PASSWORD"]:
                 with st.spinner(text("Reading HSBC confirmations…")):
-                    result = sync_hsbc(load_config(path), ROOT / "data/transactions.csv", ROOT / "data/hsbc_imports.json")
+                    result = sync_hsbc(load_config(path), ROOT / "data/transactions.csv", ROOT / "data/hsbc_imports.json", lookback_days=manual_days)
                 cached_snapshot.clear()
                 cached_performance_preview.clear()
                 st.success(text("HSBC sync: {imported} imported, {duplicates} duplicates, {skipped} skipped", **result))
             else:
-                trigger_workflow(ROOT, "CLOSE", dry_run=False, sync_only=True)
+                trigger_workflow(ROOT, "CLOSE", dry_run=False, sync_only=True, lookback_days=manual_days)
                 st.success(text("Cloud HSBC sync queued; it sends no email. After completion, use GitHub sync to pull the new transactions."))
         except (HSBCSyncError, ControlError, ValidationError, OSError) as exc:
             st.error(localized_error(exc) if not isinstance(exc, OSError) else text("Save failed; original file preserved."))
@@ -396,21 +501,22 @@ def control_center(path, config, demo):
     try:
         local = service_status(ROOT)
         st.write(text("Service: {state} · Login startup: {startup} · Port 8501: {port}",
-                      state=text("Running" if local["running"] else "Stopped"),
+                      state=text("Running" if local["running"] else "Manual Dashboard or other process" if local["port_open"] else "Stopped"),
                       startup=text("Enabled" if local["installed"] else "Disabled"),
                       port=text("Responding" if local["port_open"] else "Closed")))
         if local["supported"]:
-            cols = st.columns(4)
-            actions = ("Enable login startup", "Start service", "Stop service", "Disable login startup")
-            funcs = (install_service, start_service, stop_service, uninstall_service)
+            cols = st.columns(3)
+            actions = ("Enable login startup", "Stop service", "Disable login startup")
+            funcs = (install_service, stop_service, uninstall_service)
             for column, label, function in zip(cols, actions, funcs):
-                if column.button(text(label), disabled=demo):
+                if column.button(text(label), disabled=demo or label == "Stop service" and not local["loaded"]):
                     function(ROOT)
                     st.success(text("Service setting updated. Refresh the page to see its status."))
         else:
             st.info(text("Login startup is available only on macOS."))
     except ControlError as exc:
         st.error(localized_error(exc))
+    st.caption(text("Enabling login startup only registers the next login and leaves this Dashboard running. To switch now, stop the manual terminal process, then run python -m stockwatch.control start in that terminal."))
     st.caption(text("Login startup runs only the local Dashboard on 127.0.0.1:8501, not email jobs. Stopping it disconnects this page; cloud schedules continue."))
 
 
@@ -428,10 +534,7 @@ def settings_page(path: Path, config: dict, demo: bool):
             st.rerun()
         except OSError:
             st.error(text("Save failed; original file preserved."))
-    st.subheader(text("Local email configuration"))
-    for name, configured in configuration_status().items():
-        st.write(f"{name}: {text('Configured' if configured else 'Missing')}")
-    st.caption(text("Only presence is shown. GitHub Actions uses repository Secrets, independently of this local environment."))
+    gmail_controls(demo)
     st.subheader(text("GitHub sync"))
     st.write(text("Sync commits transactions and config, pulls remote updates including alert state, and pushes to main."))
     if st.button(text("Sync with GitHub"), disabled=demo):
@@ -533,11 +636,16 @@ def main(app_name: str = "StockWatch"):
     page_labels = {value: text(value) for value in PAGES}
     page = st.sidebar.radio(text("Navigation"), PAGES, format_func=page_labels.__getitem__, key="navigation")
     if st.sidebar.button(text("Refresh market data")):
-        cached_snapshot.clear()
-        cached_history.clear()
-        cached_search.clear()
-        cached_candidate_history.clear()
-        cached_performance_preview.clear()
+        if page == "Watchlist & Alerts":
+            cached_watchlist_snapshot.clear()
+        elif page == "Performance":
+            cached_performance_preview.clear()
+        elif page in {"Transactions", "Settings"}:
+            cached_instrument_quote.clear()
+        else:
+            cached_snapshot.clear()
+            cached_history.clear()
+        # Search names and other pages' data do not need refreshing here.
     config_path = ROOT / ("examples/config.yaml" if demo else "config.yaml")
     transactions_path = ROOT / ("examples/transactions.csv" if demo else "data/transactions.csv")
     st.title(text(page))
@@ -561,14 +669,18 @@ def main(app_name: str = "StockWatch"):
         performance_page(config, transactions, demo)
         return
     as_of = DemoProvider().session if demo else current_price_session()
-    with st.spinner(text("Loading portfolio…")):
-        portfolio, quotes = cached_snapshot(config, [tx.row() for tx in transactions], as_of, demo)
     if page == "Watchlist & Alerts":
+        with st.spinner(text("Loading portfolio…")):
+            portfolio, quotes, histories = cached_watchlist_snapshot(config, [tx.row() for tx in transactions], as_of, demo)
         chart_day = DemoProvider().session if demo else latest_session()
-        watchlist_page(config_path, config, quotes, demo, portfolio, chart_day)
+        watchlist_page(config_path, config, quotes, demo, portfolio, chart_day, histories)
         return
+    with st.spinner(text("Loading portfolio…")):
+        # Dashboard/Holdings do not display pure watchlist quotes.
+        portfolio, quotes = cached_snapshot({**config, "watchlist": {}}, [tx.row() for tx in transactions], as_of, demo)
     if page == "Dashboard":
         email_control(config_path, config, demo)
+        gmail_controls(demo)
         with st.expander(text("HSBC trade import")):
             hsbc_control(config_path, config, demo)
     summary(portfolio)
@@ -583,10 +695,24 @@ def main(app_name: str = "StockWatch"):
     if page == "Holdings":
         for row in portfolio["holdings"]:
             entry = config["watchlist"].get(row["symbol"], {})
-            st.subheader(row["symbol"])
-            st.write(entry.get("thesis") or text("No thesis configured."))
-            if "target_shares" in entry:
-                st.caption(text("Target: {target:g} shares · Held: {shares}", target=entry["target_shares"], shares=row["shares"]))
+            symbol = row["symbol"]
+            with st.expander(text("Holding notes: {symbol}", symbol=symbol), expanded=not bool(entry.get("thesis"))):
+                with st.form(f"holding_notes_{symbol}"):
+                    thesis = st.text_area(text("Thesis"), value=entry.get("thesis", ""), key=f"holding_thesis_{symbol}")
+                    st.caption(text("Notes are optional. Saving notes does not create a transaction or require a target price."))
+                    saved = st.form_submit_button(text("Save holding notes"), disabled=demo)
+                if saved:
+                    try:
+                        updated = load_config(config_path)
+                        updated["watchlist"].setdefault(symbol, {"status": "watching"})["thesis"] = thesis
+                        save_config(config_path, updated)
+                        cached_snapshot.clear()
+                        st.session_state["_stockwatch_notice"] = "Holding notes saved locally."
+                        st.rerun()
+                    except (ValidationError, OSError) as exc:
+                        st.error(localized_error(exc) if isinstance(exc, ValidationError) else text("Save failed; original file preserved."))
+                if "target_shares" in entry:
+                    st.caption(text("Target: {target:g} shares · Held: {shares}", target=entry["target_shares"], shares=row["shares"]))
     else:
         complete_rows = [row for row in portfolio["holdings"] if row["market_value"] is not None]
         if complete_rows:
@@ -598,5 +724,7 @@ def main(app_name: str = "StockWatch"):
             left.plotly_chart(px.pie(chart_data, names="Symbol", values="Market Value", hole=0.65, title=text("Portfolio allocation"), labels={"Symbol": text("Symbol"), "Market Value": text("Market Value")}), width="stretch")
             right.plotly_chart(px.bar(chart_data, x="Symbol", y="Return %", title=text("Holding returns"), labels={"Symbol": text("Symbol"), "Return %": text("Return %")}), width="stretch")
     chart_day = DemoProvider().session if demo else latest_session()
-    chart_prices(sorted(quotes), chart_day, demo)
+    held_symbols = [row["symbol"] for row in portfolio["holdings"]]
+    st.caption(text("Charts below show current holdings. Watch-only stocks are on Watchlist & Alerts."))
+    chart_prices(held_symbols, chart_day, demo)
     st.caption(text("Price history ends at the latest completed NYSE session. Prices are cached for up to five minutes."))

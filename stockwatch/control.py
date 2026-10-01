@@ -71,15 +71,28 @@ def workflow_status(root: Path) -> dict:
         raise ControlError("GitHub returned an unexpected workflow response.") from None
 
 
+
+def cloud_email_status(root: Path) -> dict:
+    """List names only; never read or write GitHub Secret values."""
+    from stockwatch.notifications.email import ENV_NAMES
+    try:
+        result = json.loads(_command([gh_path(), "secret", "list", "--repo", repository(root), "--json", "name"], root=root).stdout)
+        names = {item["name"] for item in result}
+        return {name: name in names for name in ENV_NAMES}
+    except (KeyError, TypeError, ValueError):
+        raise ControlError("GitHub returned an unexpected workflow response.") from None
+
 def set_workflow_enabled(root: Path, enabled: bool):
     _command([gh_path(), "workflow", "enable" if enabled else "disable", "daily.yml", "--repo", repository(root)], root=root)
 
 
-def trigger_workflow(root: Path, mode="CLOSE", *, dry_run=True, sync_only=False):
+def trigger_workflow(root: Path, mode="CLOSE", *, dry_run=True, sync_only=False, lookback_days=None):
     if mode not in ("CLOSE", "INTRADAY"):
         raise ControlError("Invalid report mode.")
+    if lookback_days is not None and (isinstance(lookback_days, bool) or not isinstance(lookback_days, int) or not 1 <= lookback_days <= 365):
+        raise ControlError("HSBC lookback must be between 1 and 365 days.")
     _command([gh_path(), "workflow", "run", "daily.yml", "--repo", repository(root), "--ref", "main",
-              "-f", f"mode={mode}", "-f", f"dry_run={str(dry_run).lower()}", "-f", "force_send=false"] + (["-f", "sync_only=true"] if sync_only else []), root=root)
+              "-f", f"mode={mode}", "-f", f"dry_run={str(dry_run).lower()}", "-f", "force_send=false"] + (["-f", "sync_only=true"] if sync_only else []) + (["-f", f"hsbc_lookback_days={lookback_days}"] if lookback_days is not None else []), root=root)
 
 
 def _plist_path() -> Path:
@@ -121,7 +134,7 @@ def service_status(root: Path) -> dict:
 
 
 def install_service(root: Path):
-    target = _target()
+    _target()
     path = _owned(root)
     root = root.resolve()
     if not (root / "app.py").is_file():
@@ -132,10 +145,6 @@ def install_service(root: Path):
                "--server.address=127.0.0.1", "--server.port=8501", "--server.headless=true"],
               "WorkingDirectory": str(root), "RunAtLoad": True, "KeepAlive": True,
               "StandardOutPath": str(logs / "launchd.stdout.log"), "StandardErrorPath": str(logs / "launchd.stderr.log")}
-    # Refuse another service on this port, including a manually started Dashboard.
-    status = service_status(root)
-    if status["port_open"] and not status["running"]:
-        raise ControlError("Port 8501 is already in use. Stop the manually started Dashboard before enabling login startup.")
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".tmp")
     try:
@@ -143,14 +152,14 @@ def install_service(root: Path):
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
-    if not status["loaded"]:
-        _command(["launchctl", "bootstrap", f"gui/{os.getuid()}", str(path)])
-    _command(["launchctl", "kickstart", target])
+    # Register the next login only. The current Dashboard may own port 8501.
+    # Loading/kickstarting here would spawn a second process from its own UI.
 
 
 def stop_service(root: Path):
     _owned(root)
-    _command(["launchctl", "bootout", _target()])
+    if service_status(root)["loaded"]:
+        _command(["launchctl", "bootout", _target()])
 
 
 def start_service(root: Path):
@@ -159,7 +168,7 @@ def start_service(root: Path):
         raise ControlError("Enable login startup before starting the managed service.")
     status = service_status(root)
     if status["port_open"] and not status["running"]:
-        raise ControlError("Port 8501 is already in use. Stop the manually started Dashboard before enabling login startup.")
+        raise ControlError("Port 8501 is already in use. Stop the manually started Dashboard before starting the managed service.")
     if not status["loaded"]:
         _command(["launchctl", "bootstrap", f"gui/{os.getuid()}", str(path)])
     _command(["launchctl", "kickstart", _target()])

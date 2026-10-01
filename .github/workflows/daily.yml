@@ -4,7 +4,7 @@ on:
   schedule:
     - cron: '30 10 * * 1-5'
       timezone: America/New_York
-    - cron: '30 18 * * 1-5'
+    - cron: '0 19 * * 1-5'
       timezone: America/New_York
   workflow_dispatch:
     inputs:
@@ -25,6 +25,10 @@ on:
         description: 仅同步汇丰成交，不生成或发送日报
         type: boolean
         default: false
+      hsbc_lookback_days:
+        description: 仅成交同步的回溯天数（1-365），不改变每日最多3天的范围
+        type: string
+        default: '3'
       force_send:
         description: 强制重发所选模式的报告，提醒仍去重（Force send）
         type: boolean
@@ -41,7 +45,7 @@ jobs:
   daily:
     if: github.ref == 'refs/heads/main' && github.event.repository.private == true
     runs-on: ubuntu-latest
-    timeout-minutes: 65
+    timeout-minutes: 45
     steps:
       - name: Checkout latest main
         uses: actions/checkout@v4
@@ -67,6 +71,7 @@ jobs:
           SCHEDULED: ${{ github.event_name == 'schedule' }}
           DRY_RUN: ${{ inputs.dry_run }}
           REBUILD_PERFORMANCE: ${{ inputs.rebuild_performance }}
+          HSBC_LOOKBACK_DAYS: ${{ inputs.hsbc_lookback_days || '3' }}
           SYNC_ONLY: ${{ inputs.sync_only }}
           FORCE_SEND: ${{ inputs.force_send }}
           REPORT_MODE: ${{ github.event_name == 'schedule' && (github.event.schedule == '30 10 * * 1-5' && 'INTRADAY' || 'CLOSE') || inputs.mode || 'CLOSE' }}
@@ -76,7 +81,7 @@ jobs:
           if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
           if [ "$FORCE_SEND" = "true" ]; then args+=(--force-send); fi
           if [ "$REBUILD_PERFORMANCE" = "true" ]; then args+=(--rebuild-performance); fi
-          if [ "$SYNC_ONLY" = "true" ]; then args+=(--sync-only); fi
+          if [ "$SYNC_ONLY" = "true" ]; then args+=(--sync-only --lookback-days "$HSBC_LOOKBACK_DAYS"); fi
           python -m stockwatch.daily "${args[@]}"
       - name: Validate and persist notification state
         if: always() && (steps.report.outcome == 'success' || steps.report.outcome == 'failure')

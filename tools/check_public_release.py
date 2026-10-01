@@ -13,7 +13,7 @@ PATTERNS = [
     re.compile(rb"/Users/[A-Za-z0-9_.-]+/"),
     re.compile(rb"(?:GMAIL_APP_PASSWORD|GITHUB_TOKEN)\s*[:=]\s*['\"][A-Za-z0-9]{16,}['\"]"),
 ]
-PROHIBITED = ("data/", "logs/", "outputs/", ".venv/", ".streamlit/", ".cache/")
+PROHIBITED = (".stockwatch/", "data/", "logs/", "outputs/", ".venv/", ".streamlit/", ".cache/")
 
 
 def git(*args):

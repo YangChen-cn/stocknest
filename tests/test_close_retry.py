@@ -34,7 +34,7 @@ def test_waits_without_consuming_state_then_sends_complete_report(portfolio_file
         assert not sent and load_state(portfolio_files["state_path"]) == {}
         sleeps.append(seconds)
     assert run(**{**portfolio_files, "provider":provider}, sender=lambda *a: sent.append(a[0]), sleeper=sleep) == 0
-    assert sleeps == [600,600] and provider.calls == 3 and provider.cleared == 2 and len(sent) == 1
+    assert sleeps == [120,120] and provider.calls == 3 and provider.cleared == 2 and len(sent) == 1
     assert "report error" not in sent[0].subject
     assert load_state(portfolio_files["state_path"])["_meta"]["last_report_session"] == DAY.isoformat()
 
@@ -47,9 +47,9 @@ def test_exhaustion_notifies_once_and_recovery_sends_normal_report(portfolio_fil
     assert run(**args) == 2
     state = load_state(portfolio_files["state_path"])
     assert state == {"_meta":{"last_close_error_session":DAY.isoformat()}}
-    assert sleeps == [600,600] and len(sent) == 1 and "report error" in sent[0].subject
+    assert sleeps == [120,120] and len(sent) == 1 and "report error" in sent[0].subject
     assert "Market Value" not in sent[0].text
-    assert run(**args) == 2 and len(sent) == 1 and sleeps == [600,600]
+    assert run(**args) == 2 and len(sent) == 1 and sleeps == [120,120]
     args["provider"] = FakeProvider()
     assert run(**args) == 0 and len(sent) == 2
     assert load_state(portfolio_files["state_path"])["XYZ"]["below_95"]["triggered"]
@@ -102,3 +102,17 @@ def test_imported_ledger_is_used_by_the_report(portfolio_files,monkeypatch):
         return {"imported":1,"duplicates":0,"skipped":0}
     assert run(**portfolio_files,importer=importer,sender=lambda *a:sent.append(a[0]))==0
     assert "$270.00" in sent[0].text
+
+
+def test_daily_import_caps_historical_window_to_three_days(portfolio_files):
+    from stockwatch.storage import load_config, save_config
+    config=load_config(portfolio_files["config_path"])
+    config["imports"]={"hsbc":{"enabled":True,"lookback_days":30}}
+    save_config(portfolio_files["config_path"],config)
+    captured=[]
+    def importer(config,*args,**kwargs):
+        captured.append(config["imports"]["hsbc"]["lookback_days"])
+        return {"disabled":True}
+    assert run(**portfolio_files,dry_run=True,importer=importer)==0
+    assert captured==[3]
+    assert load_config(portfolio_files["config_path"])["imports"]["hsbc"]["lookback_days"]==30

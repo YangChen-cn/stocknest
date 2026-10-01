@@ -28,3 +28,6 @@ data/performance.local.json
 *.key
 *.pem
 credentials*.json
+
+# Optional local Gmail profile; never synchronize credentials.
+/.stockwatch/
