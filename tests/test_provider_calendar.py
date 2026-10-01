@@ -79,3 +79,41 @@ def test_history_periods_and_exclusive_end(monkeypatch, period):
 def test_invalid_period():
     with pytest.raises(ValueError):
         OpenBBProvider().get_history("XYZ", "2Y")
+
+
+def test_delayed_close_retried_and_only_fresh_response_cached(monkeypatch, caplog):
+    stale = [{"date": "2026-10-05", "close": 100}]
+    fresh = stale + [{"date": "2026-10-06", "close": 101}]
+    worker = Mock(side_effect=[subprocess.CompletedProcess([], 0, json.dumps({"data": rows}), "") for rows in (stale, fresh)])
+    monkeypatch.setattr("stockwatch.providers.openbb_provider.subprocess.run", worker)
+    monkeypatch.setattr("stockwatch.providers.openbb_provider.time.sleep", lambda _: None)
+    provider = OpenBBProvider()
+    quote = provider.get_quote("XYZ", date(2026, 10, 6))
+    assert quote.price == 101 and quote.previous_close == 100 and not quote.error
+    assert worker.call_count == 2
+    assert "expected=2026-10-06 latest=2026-10-05" in caplog.text
+    assert provider.get_quote("XYZ", date(2026, 10, 6)).price == 101 and worker.call_count == 2
+
+
+def test_stale_cache_is_refetched_and_does_not_substitute_an_old_close(monkeypatch):
+    rows = [{"date": "2026-10-05", "close": 100}]
+    worker = Mock(return_value=subprocess.CompletedProcess([], 0, json.dumps({"data": rows}), ""))
+    monkeypatch.setattr("stockwatch.providers.openbb_provider.subprocess.run", worker)
+    monkeypatch.setattr("stockwatch.providers.openbb_provider.time.sleep", lambda _: None)
+    provider = OpenBBProvider()
+    provider._history_cache[("XYZ", date(2025, 1, 1), date(2026, 10, 7))] = normalize_history(rows)
+    quote = provider.get_quote("XYZ", date(2026, 10, 6))
+    assert quote.price is None and quote.error and worker.call_count == 2
+    with pytest.raises(DataUnavailable):
+        provider.get_history("XYZ", "5D", date(2026, 10, 6))
+    assert worker.call_count == 4
+
+
+def test_partial_history_survives_a_retry_timeout_without_fabricating_data(monkeypatch):
+    worker = Mock(side_effect=[subprocess.CompletedProcess([], 0, json.dumps({"data": [{"date": "2026-10-05", "close": 100}]}), ""),
+                               subprocess.TimeoutExpired("worker", 0.01)])
+    monkeypatch.setattr("stockwatch.providers.openbb_provider.subprocess.run", worker)
+    monkeypatch.setattr("stockwatch.providers.openbb_provider.time.sleep", lambda _: None)
+    provider = OpenBBProvider()
+    frame = provider.get_history_range("XYZ", date(2026, 10, 5), date(2026, 10, 6))
+    assert list(frame.date) == [date(2026, 10, 5)] and not provider._history_cache

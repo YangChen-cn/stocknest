@@ -6,6 +6,7 @@ a real timeout instead of leaving a blocked network thread alive.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import subprocess
 import sys
@@ -14,10 +15,12 @@ from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
-from stockwatch.history import period_start
+from stockwatch.history import period_start, sessions
 from stockwatch.calendar import NY, latest_session, active_session, current_price_session, previous_session
 from stockwatch.providers.base import DataUnavailable, Instrument, PERIODS, Quote
 from stockwatch.storage import ValidationError, ticker
+
+logger = logging.getLogger(__name__)
 
 # Company-name aliases only; instrument symbols always come from provider results.
 NAME_ALIASES = {"苹果": "Apple", "特斯拉": "Tesla", "英伟达": "NVIDIA", "微软": "Microsoft",
@@ -146,12 +149,15 @@ class OpenBBProvider:
         except (subprocess.TimeoutExpired, ValueError, IndexError, OSError) as exc:
             raise DataUnavailable("Search unavailable") from exc
 
-    def _request(self, symbol: str, start: date, end: date) -> pd.DataFrame:
+    def _request(self, symbol: str, start: date, end: date, *, required_session: date | None = None) -> pd.DataFrame:
         for (cached_symbol, cached_start, cached_end), frame in self._history_cache.items():
             if symbol == cached_symbol and cached_start <= start and end <= cached_end:
-                return frame[(frame.date >= start) & (frame.date < end)].copy()
+                selected = frame[(frame.date >= start) & (frame.date < end)].copy()
+                if required_session is None or required_session in set(selected.date):
+                    return selected
         payload = json.dumps({"symbol": symbol, "start": start.isoformat(), "end": end.isoformat()})
         error = "Provider failed"
+        partial = None
         for attempt in range(self.attempts):
             try:
                 completed = subprocess.run([sys.executable, "-m", "stockwatch.providers.worker"],
@@ -163,19 +169,30 @@ class OpenBBProvider:
                 if "error" in response:
                     raise DataUnavailable(response["error"])
                 frame = normalize_history(response["data"])
+                if required_session is not None and required_session not in set(frame.date):
+                    partial = frame
+                    logger.warning("%s: missing target session; expected=%s latest=%s attempt=%s/%s",
+                                   symbol, required_session, frame.date.max(), attempt + 1, self.attempts)
+                    if attempt + 1 < self.attempts:
+                        time.sleep(3)
+                    continue
                 self._history_cache[(symbol, start, end)] = frame
                 return frame
             except (subprocess.TimeoutExpired, ValueError, IndexError, DataUnavailable) as exc:
                 error = "Provider request timed out" if isinstance(exc, subprocess.TimeoutExpired) else "Provider returned no usable data"
                 if attempt + 1 < self.attempts:
                     time.sleep(1)
+        if partial is not None:
+            # Preserve usable older bars for gap reporting, never treat them as the
+            # target close or cache a stale response across this job.
+            return partial
         raise DataUnavailable(error)
 
     def get_quote(self, symbol: str, session: date | None = None) -> Quote:
         day = session or current_price_session()
         try:
             # End dates are exclusive in yfinance; include the entire target session.
-            frame = self._request(symbol, day - timedelta(days=380), day + timedelta(days=1))
+            frame = self._request(symbol, day - timedelta(days=380), day + timedelta(days=1), required_session=day)
             return quote_from_history(symbol, frame, day)
         except DataUnavailable as exc:
             return Quote(symbol, session=day, error=f"Data unavailable: {exc}")
@@ -193,7 +210,9 @@ class OpenBBProvider:
     def get_history_range(self, symbol: str, start: date, end: date) -> pd.DataFrame:
         if end < start:
             raise ValueError("End precedes start")
-        frame = self._request(symbol, start, end + timedelta(days=1))
+        trading_days = sessions(start, end)
+        required = trading_days[-1] if trading_days else None
+        frame = self._request(symbol, start, end + timedelta(days=1), required_session=required)
         return frame[(frame.date >= start) & (frame.date <= end)].reset_index(drop=True)
 
 

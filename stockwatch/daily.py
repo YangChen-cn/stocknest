@@ -63,6 +63,8 @@ def run(*, config_path: Path, transactions_path: Path, state_path: Path, output_
     logger.info(t("Report mode: {mode}", lang, mode=mode))
     logger.info(t("Report generated for {session}: {holdings} holdings, {alerts} new alerts, {unavailable} tickers unavailable",
                   lang, session=session, holdings=len(portfolio["holdings"]), alerts=len(pending), unavailable=sum(q.price is None for q in quotes.values())))
+    if portfolio["market_value"] is None:
+        logger.warning(t("Market data is missing; this report cannot provide a complete portfolio valuation.", lang))
     if dry_run or demo:
         logger.info(t("Preview only: no email or state changes", lang))
         return 0

@@ -219,6 +219,7 @@ ZH.update({
     "Optional targets & alerts": "可选：目标价与提醒",
     "Cannot verify repository privacy. Check gh login before syncing personal data.": "无法核验仓库私有状态，请先检查 gh 登录后再同步个人数据。",
     "Personal configuration can only sync to a verified private GitHub repository.": "个人配置只能同步到已核验的私有 GitHub 仓库。",
+    "Market data is missing; this report cannot provide a complete portfolio valuation.": "行情数据缺失，本次报告无法计算完整的持仓估值。",
     "Closing report": "收盘日报", "Intraday brief": "盘中简报",
 })
 

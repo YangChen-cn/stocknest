@@ -60,6 +60,9 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
     if intraday:
         summary = summary[1:3]
     lines = [title, timing, "", tr("SIMULATED DEMO DATA — not live market prices") if demo else tr("Regular-session prices · USD"), "", tr("Portfolio")]
+    data_warning = tr("Market data is missing; this report cannot provide a complete portfolio valuation.") if portfolio["market_value"] is None else ""
+    if data_warning:
+        lines[2:2] = [data_warning]
     lines.extend(f"{name}: {value}" for name, value in summary)
     performance_lines = []
     if performance and len(performance["points"]) > 1:
@@ -147,6 +150,7 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
 <div style="max-width:640px;margin:0 auto;background:white;padding:20px;border-radius:12px">
 <h1 style="font-size:22px;margin:0 0 6px">{escape(heading)}</h1><p style="color:#666;margin:0 0 16px">{session.isoformat()} · {escape(tr('USD'))} · {escape(tr('Regular session'))}</p>
 <p style="color:#666;font-size:13px">{escape(timing)}</p>
+{paragraphs([data_warning]) if data_warning else ''}
 {paragraphs([tr('SIMULATED DEMO DATA — not live market prices')]) if demo else ''}
 <table role="presentation" style="width:100%;font-size:15px">{summary_html}</table>
 {'<h2 style="font-size:18px">' + escape(tr('Performance')) + '</h2>' + paragraphs(performance_lines) if performance_lines else ''}

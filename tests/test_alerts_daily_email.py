@@ -1,4 +1,8 @@
 from datetime import date
+from decimal import Decimal
+
+from stockwatch.portfolio import calculate, positions
+from stockwatch.storage import Transaction
 
 import pytest
 
@@ -138,3 +142,14 @@ def test_demo_cli_offline_without_state_write(tmp_path):
     assert main(["--demo", "--state", str(state), "--output-dir", str(tmp_path / "out"), "--log-dir", str(tmp_path / "log")]) == 0
     assert not state.exists()
     assert "SIMULATED DEMO DATA" in (tmp_path / "out/2026-10-06.html").read_text()
+
+
+def test_incomplete_valuation_warning_precedes_summary():
+    unavailable = {"XYZ": Quote("XYZ", session=DAY, error="Data unavailable")}
+    portfolio = calculate(positions([Transaction(DAY, "XYZ", "BUY", Decimal(1), Decimal(90))], DAY), unavailable)
+    data = config()
+    data["portfolio"]["language"] = "zh-CN"
+    report = render_report(DAY, portfolio, unavailable, data, [])
+    warning = "行情数据缺失，本次报告无法计算完整的持仓估值。"
+    assert warning in report.html and warning in report.text
+    assert report.html.index(warning) < report.html.index("持仓成本")
