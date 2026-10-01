@@ -65,7 +65,7 @@ Only CLOSE writes `data/performance.json`; INTRADAY reads the previous close. Al
 
 ## GitHub Actions: use a private personal copy
 
-The **public source repository only runs CI**. `daily.yml` explicitly skips public repositories because logs/artifacts could reveal personal portfolio information. Do not enable portfolio automation in a public fork or commit real data there.
+The **public source repository does not run portfolio automation**. CI checks shared code in the public repository. `daily.yml` explicitly skips public repositories because logs/artifacts could reveal personal portfolio information. Do not enable portfolio automation in a public fork or commit real data there.
 
 For personal automation, create a **private** repository from this clean source (GitHub template if available, or import/push the source to a new private repository). Change `origin` to that private repository. Confirm its visibility in GitHub Settings. Once verified private, intentionally track your personal inputs in that private copy:
 
@@ -168,8 +168,14 @@ Stock search runs when a changed name/ticker is submitted with Enter or focus le
 
 Holdings provides editable thesis/notes, even when empty. Notes preserve existing watchlist settings and do not require targets/alerts. Nonempty holding notes appear in both text/HTML emails; blank notes are omitted and HTML is escaped. Holdings/Dashboard price charts list current holdings only; pure watched stocks live on Watchlist & Alerts.
 
-Dashboard/Holdings request holdings and opening-position prices only, avoiding unused candidate quotes. The candidate pool reuses the same provider's already-fetched daily history for 5D/1M analytics. Five-minute quote caches and refresh scoped to the active page reduce repeat requests; stock-name searches keep their separate cache. Free-provider/network latency can still affect a first load.
+Dashboard/Holdings request holdings and opening-position prices only, avoiding unused candidate quotes. The candidate pool reuses the same provider's already-fetched daily history for 5D/1M analytics. Session-based disk caching outside trading hours and five-minute memory caching during trading reduce repeat requests; stock-name searches keep their separate cache. Free-provider/network latency can still affect a first load.
 
 Holding-note inputs and optional target/alert fields default to collapsed. Dashboard also provides a separate watchlist price chart below the holdings charts, with independent stock/period selectors; it fetches history only after you choose a stock.
 
 Settings removes the generic stock-search panel. The existing benchmark remains editable in a collapsed advanced section. Cloud workflow controls and macOS login controls are separately labeled and collapsed by default; enabling cloud reports manages the existing GitHub workflow, not a local scheduler.
+
+### Closed-market dashboard cache
+
+Outside an active NYSE session, Dashboard and Watchlist reuse validated daily bars in ignored `.cache/market/`. The cache survives page changes and app restarts and expires when a newer completed NYSE session exists. Missing/stale closes or previous closes are fetched again, never presented as current data. Regular-session prices retain a five-minute memory cache. **Refresh market data** clears the UI market cache and forces another request; the first load of a new session still needs the free provider. Daily reports do not read this UI cache.
+
+Only the public StockNest repository runs CI for shared code. Private StockWatch CI stays disabled to conserve private Actions minutes; daily automation remains separately controlled.

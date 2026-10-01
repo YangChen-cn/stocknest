@@ -46,6 +46,8 @@ ZH = {
     "Dashboard": "总览", "Holdings": "持仓", "Transactions": "交易记录",
     "Watchlist & Alerts": "关注与提醒", "Settings": "设置", "Navigation": "页面导航",
     "Your portfolio, clearly.": "轻松看清你的美股持仓。", "Demo mode": "演示模式",
+    "Could not clear local market cache.": "无法清除本地行情缓存。",
+    "Closed markets use a local cache for the latest completed NYSE session. During trading, prices are cached for up to five minutes. Refresh market data forces an update.": "闭市时读取最近收盘日的本地缓存；交易时段行情缓存最多五分钟。点击「刷新行情」可强制更新。",
     "Refresh market data": "刷新行情", "Language": "界面与日报语言",
     "Total Cost": "持仓成本", "Market Value": "持仓市值", "Daily P/L": "今日盈亏",
     "Unrealized P/L": "浮动盈亏", "Total Return": "持仓收益率",

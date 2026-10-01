@@ -1,5 +1,6 @@
 """Localized Streamlit dashboard. No OpenBB imports or notification state writes."""
 from datetime import datetime
+from functools import wraps
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -9,7 +10,7 @@ import streamlit as st
 
 from stockwatch.imports.gmail import sync_hsbc
 from stockwatch.imports.hsbc import HSBCSyncError
-from stockwatch.calendar import current_price_session, latest_session
+from stockwatch.calendar import current_price_session, latest_session, active_session
 from stockwatch.history import period_start
 from stockwatch.performance import DEFAULT_BENCHMARK, build_history, load_history, fingerprint, period_returns
 from stockwatch.control import (ControlError, cloud_email_status, workflow_status, set_workflow_enabled, trigger_workflow,
@@ -19,6 +20,7 @@ from stockwatch.i18n import LANGUAGES, data_status, error_message, language, t
 from stockwatch.notifications.email import configuration_status
 from stockwatch.notifications.local import credentials, load_local, save_local, remove_local
 from stockwatch.providers.base import DataUnavailable, PERIODS
+from stockwatch.providers.cached import ClosedSessionProvider, clear_market_cache
 from stockwatch.providers.demo import DemoProvider
 from stockwatch.providers.openbb_provider import OpenBBProvider
 from stockwatch.reports import money as format_money, percent as format_percent
@@ -44,15 +46,40 @@ def localized_error(error: Exception) -> str:
     return error_message(error, st.session_state.get("_stockwatch_language", "en"))
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+def ui_provider(demo):
+    if demo:
+        return DemoProvider()
+    provider = OpenBBProvider()
+    if active_session() is None:
+        return ClosedSessionProvider(provider, ROOT / ".cache/market", latest_session())
+    return provider
+
+
+def market_cache(function):
+    # Session and market state are part of the memory key, including at open/close.
+    @st.cache_data(ttl=300, show_spinner=False)
+    def cached(args, kwargs, market_session, function_name):
+        return function(*args, **kwargs)
+
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        active = active_session()
+        key = ("open", active) if active else ("closed", latest_session())
+        return cached(args, kwargs, key, function.__name__)
+
+    wrapped.clear = cached.clear
+    return wrapped
+
+
+@market_cache
 def cached_snapshot(config: dict, rows: list[dict], as_of, demo: bool):
-    provider = DemoProvider() if demo else OpenBBProvider()
+    provider = ui_provider(demo)
     return snapshot(config, validate_transactions(rows), provider, as_of, closing=demo)
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@market_cache
 def cached_history(symbol: str, period: str, as_of, demo: bool):
-    provider = DemoProvider() if demo else OpenBBProvider()
+    provider = ui_provider(demo)
     return provider.get_history(symbol, period, as_of)
 
 
@@ -62,9 +89,9 @@ def cached_search(query: str, demo: bool):
     return search_instruments(provider, query)
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@market_cache
 def cached_candidate_history(symbols: tuple[str, ...], as_of, demo: bool):
-    provider = DemoProvider() if demo else OpenBBProvider()
+    provider = ui_provider(demo)
     histories = {}
     for symbol in symbols:
         try:
@@ -75,18 +102,18 @@ def cached_candidate_history(symbols: tuple[str, ...], as_of, demo: bool):
     return histories
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@market_cache
 def cached_instrument_quote(symbol, demo):
-    provider = DemoProvider() if demo else OpenBBProvider()
+    provider = ui_provider(demo)
     day = DemoProvider().session if demo else current_price_session()
     _, quotes = snapshot({"portfolio": {"base_currency": "USD"}, "watchlist": {symbol: {}}}, [], provider, day, closing=demo)
     return quotes[symbol]
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@market_cache
 def cached_watchlist_snapshot(config, rows, as_of, demo):
     # Quotes already fetch a year's daily bars. Reuse this provider's range cache.
-    provider = DemoProvider() if demo else OpenBBProvider()
+    provider = ui_provider(demo)
     portfolio, quotes = snapshot(config, validate_transactions(rows), provider, as_of, closing=demo)
     end = DemoProvider().session if demo else latest_session()
     histories = {}
@@ -643,16 +670,19 @@ def main(app_name: str = "StockWatch"):
     page_labels = {value: text(value) for value in PAGES}
     page = st.sidebar.radio(text("Navigation"), PAGES, format_func=page_labels.__getitem__, key="navigation")
     if st.sidebar.button(text("Refresh market data")):
-        if page == "Watchlist & Alerts":
-            cached_watchlist_snapshot.clear()
-        elif page == "Performance":
+        if not demo:
+            try:
+                clear_market_cache(ROOT / ".cache/market")
+            except OSError:
+                st.sidebar.warning(text("Could not clear local market cache."))
+        cached_candidate_history.clear()
+        cached_instrument_quote.clear()
+        cached_watchlist_snapshot.clear()
+        cached_snapshot.clear()
+        cached_history.clear()
+        if page == "Performance":
             cached_performance_preview.clear()
-        elif page in {"Transactions", "Settings"}:
-            cached_instrument_quote.clear()
-        else:
-            cached_snapshot.clear()
-            cached_history.clear()
-        # Search names and other pages' data do not need refreshing here.
+        # Instrument-name searches retain their separate cache.
     config_path = ROOT / ("examples/config.yaml" if demo else "config.yaml")
     transactions_path = ROOT / ("examples/transactions.csv" if demo else "data/transactions.csv")
     st.title(text(page))
@@ -740,4 +770,4 @@ def main(app_name: str = "StockWatch"):
             chart_prices(list(config["watchlist"]), chart_day, demo, "dashboard_watchlist", True)
         else:
             st.caption(text("No watched stocks yet. Add them on Watchlist & Alerts."))
-    st.caption(text("Price history ends at the latest completed NYSE session. Prices are cached for up to five minutes."))
+    st.caption(text("Closed markets use a local cache for the latest completed NYSE session. During trading, prices are cached for up to five minutes. Refresh market data forces an update."))
