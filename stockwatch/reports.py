@@ -2,6 +2,8 @@
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from html import escape
+from math import isfinite
+from decimal import Decimal
 
 from stockwatch.alerts import Alert, report_session_key, target_distances
 from stockwatch.calendar import NY
@@ -32,6 +34,21 @@ class Report:
     html: str
     data_json: str | None = None
     data_filename: str | None = None
+
+
+def intraday_watchlist_highlights(config, quotes, held, session):
+    """Up to three unheld watchers reaching 5%; decimal comparisons keep ties stable."""
+    candidates = []
+    for symbol in config["watchlist"]:
+        quote = quotes.get(symbol)
+        if symbol in held or not quote or quote.error or quote.session != session:
+            continue
+        if any(value is None or value <= 0 or not isfinite(value) for value in (quote.price, quote.previous_close)):
+            continue
+        change = (Decimal(str(quote.price)) / Decimal(str(quote.previous_close)) - 1) * 100
+        if abs(change) >= 5:
+            candidates.append((change, quote))
+    return [quote for _, quote in sorted(candidates, key=lambda item: (-abs(item[0]), item[1].symbol))[:3]]
 
 
 def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], config: dict,
@@ -106,6 +123,20 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
         lines.append(tr("No current holdings."))
         holding_html.append(f"<tr><td colspan='{3 if intraday else 4}' style='padding:12px'>{escape(tr('No current holdings.'))}</td></tr>")
     watch_html = ""
+    highlights = intraday_watchlist_highlights(config, quotes, {row["symbol"] for row in portfolio["holdings"]}, session) if intraday else []
+    if highlights:
+        heading_watch = tr("Watchlist moves ≥5% (up to 3)")
+        ranking = tr("Absolute daily change reaches 5%; ranked by magnitude. Normal-session snapshots, not final closes.")
+        lines.extend(["", heading_watch, ranking])
+        cells = []
+        for quote in highlights:
+            stamp = quote.price_at.astimezone(NY).strftime("%H:%M %Z") if quote.price_at else tr("Data unavailable")
+            values = [quote.symbol, m(quote.price), p(quote.daily_move_pct), stamp]
+            lines.append(tr("{symbol}: {price} · Today {daily} · Price time {time} New York",
+                            symbol=quote.symbol, price=values[1], daily=values[2], time=stamp))
+            cells.append("<tr>" + "".join(f"<td style='padding:8px 3px;border-bottom:1px solid #eee'>{escape(value)}</td>" for value in values) + "</tr>")
+        headers = ("Symbol", "Current Price", "Daily %", "Price time (New York)")
+        watch_html = "<h2 style='font-size:18px'>" + escape(heading_watch) + "</h2><p style='font-size:12px;color:#666'>" + escape(ranking) + "</p><table style='width:100%;font-size:12px;border-collapse:collapse;text-align:left'><tr>" + "".join("<th>" + escape(tr(header)) + "</th>" for header in headers) + "</tr>" + "".join(cells) + "</table>"
     if not intraday and config["watchlist"]:
         rows = watchlist_rows if watchlist_rows is not None else [
             {"Symbol": symbol, "Current Price": quotes.get(symbol, Quote(symbol)).price,
@@ -124,7 +155,11 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
     distances = target_distances(config, quotes) if not intraday else []
     unusual = []
     if intraday:
+        held_symbols = {row["symbol"] for row in portfolio["holdings"]}
         for symbol, quote in sorted(quotes.items()):
+            # Watch-only movements belong in the capped summary; configured alerts remain independent.
+            if symbol in config["watchlist"] and symbol not in held_symbols:
+                continue
             threshold = config["watchlist"].get(symbol, {}).get("alerts", {}).get("daily_move_pct", 5)
             if not quote.error and quote.daily_move_pct is not None and abs(quote.daily_move_pct) >= threshold:
                 unusual.append(tr("{symbol}: {change} today (movement threshold {threshold:g}%)", symbol=symbol, change=p(quote.daily_move_pct), threshold=threshold))
@@ -137,7 +172,7 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
                     distances.append(tr("{symbol}: {price} · {distance} from target {target} · {status}", symbol=symbol, price=m(quote.price), distance=p(distance), target=m(target), status=tr(entry.get("status", "watching"))))
     errors = [f"{symbol}: {data_status(quote.error, lang)}" for symbol, quote in quotes.items() if quote.error or quote.price is None]
     lines.extend(["", tr("Alerts")] + (alert_messages or [tr("No new alerts.")]))
-    if intraday:
+    if intraday and (unusual or not highlights):
         lines.extend(["", tr("Notable moves")] + (unusual or [tr("No moves reached the threshold.")]))
     if distances:
         lines.extend(["", tr("Near candidate price (within 5%)" if intraday else "Target price distances (informational)")] + distances)
@@ -166,13 +201,16 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
 <tr><th>{escape(tr('Symbol'))}</th><th>{escape(tr('Price / Day'))}</th>{'<th>' + escape(tr('Price time (New York)')) + '</th>' if intraday else '<th>' + escape(tr('P/L / Return')) + '</th><th>' + escape(tr('Weight')) + '</th>'}</tr>{''.join(holding_html)}</table>
 {watch_html}
 <h2 style="font-size:18px">{escape(tr('Alerts'))}</h2>{paragraphs(alert_messages or [tr('No new alerts.')])}
-{'<h2 style="font-size:18px">' + escape(tr('Notable moves')) + '</h2>' + paragraphs(unusual or [tr('No moves reached the threshold.')]) if intraday else ''}
+{'<h2 style="font-size:18px">' + escape(tr('Notable moves')) + '</h2>' + paragraphs(unusual or [tr('No moves reached the threshold.')]) if intraday and (unusual or not highlights) else ''}
 {'<h3 style="font-size:15px">' + escape(tr('Near candidate price (within 5%)' if intraday else 'Target price distances (informational)')) + '</h3>' + paragraphs(distances or [tr('No candidates within 5% of target.')]) if distances or intraday else ''}
 {'<h2 style="font-size:18px">' + escape(tr('Data availability')) + '</h2>' + paragraphs(errors) if errors else ''}
 <p style="font-size:12px;color:#666;margin-top:24px">{escape(lines[-3])}<br>{escape(lines[-2])}<br>{escape(lines[-1])}</p>
 </div></body></html>"""
     data = report_data(session, portfolio, quotes, config, alerts, mode=mode, generated_at=generated_at,
                        demo=demo, performance=performance, watchlist_rows=watchlist_rows)
+    if intraday:
+        data["visible_watchlist_symbols"] = [quote.symbol for quote in highlights]
+        data["watchlist_highlight_selection"] = "up to 3 unheld watched symbols reaching 5% absolute daily change, ranked by magnitude, ties by symbol"
     plain, html = append_data("\n".join(lines) + "\n", html, data)
     return Report(subject, plain, html, serialize_data(data), f"stockwatch-{session}-{mode.lower()}.json")
 

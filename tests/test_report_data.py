@@ -103,3 +103,39 @@ def test_failure_json_attachment_and_legacy_report_compatibility():
     legacy = make_message(Report("Subject", "Plain", "<p>HTML</p>"), settings)
     assert legacy.get_content_type() == "multipart/alternative"
     assert not list(legacy.iter_attachments())
+
+
+def test_dashboard_export_is_read_only_and_uses_loaded_values(tmp_path, monkeypatch):
+    from stockwatch import ui
+    captured = {}
+    monkeypatch.setattr(ui, "ROOT", tmp_path)
+    monkeypatch.setattr(ui, "latest_session", lambda *args: DAY)
+    monkeypatch.setattr(ui.st, "caption", lambda *args: None)
+    def download(label, data, **kwargs):
+        captured.update(label=label, data=json.loads(data), **kwargs)
+    monkeypatch.setattr(ui.st, "download_button", download)
+    config = {"portfolio": {}, "watchlist": {"CAND": {"thesis": "Synthetic note"}}}
+    quotes = {"XYZ": Quote("XYZ", 21, 20, session=DAY)}
+    portfolio = calculate({"XYZ": Position("XYZ", Decimal(1), Decimal(20))}, quotes)
+    ui.ai_export(config, [], portfolio, quotes, DAY, False)
+    assert captured["data"]["origin"] == "dashboard_export"
+    assert captured["data"]["portfolio"]["metrics"]["market_value"] == "21"
+    assert captured["data"]["alert_evaluation"] == "not_evaluated"
+    assert captured["data"]["instruments"][0]["data_status"] == "not_loaded"
+    assert captured["data"]["performance_status"] == "missing"
+    assert captured["file_name"] == f"stockwatch-{DAY}-close-snapshot.json"
+    assert captured["on_click"] == "ignore"
+    assert not list(tmp_path.iterdir())
+
+
+def test_dashboard_export_rejects_changed_transaction_history(tmp_path, monkeypatch):
+    from stockwatch import ui
+    captured = {}
+    monkeypatch.setattr(ui, "ROOT", tmp_path)
+    monkeypatch.setattr(ui, "latest_session", lambda *args: DAY)
+    monkeypatch.setattr(ui, "load_history", lambda path: {"fingerprint": "outdated", "points": []})
+    monkeypatch.setattr(ui.st, "caption", lambda *args: None)
+    monkeypatch.setattr(ui.st, "download_button", lambda label, data, **kwargs: captured.update(json.loads(data)))
+    ui.ai_export({"portfolio": {}, "watchlist": {}}, [], calculate({}, {}), {}, DAY, False)
+    assert captured["performance"] is None
+    assert captured["performance_status"] == "transactions_or_benchmark_changed"

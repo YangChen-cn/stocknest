@@ -141,7 +141,7 @@ def test_short_report_semantics_timestamps_near_targets_and_html_escaping():
     short = render_report(DAY, portfolio, quotes, config, [], mode="INTRADAY", generated_at=now)
     close = render_report(DAY, portfolio, quotes, config, [])
     assert "盘中简报" in short.subject and "并非最终收盘价" in short.text
-    assert "10:30 EDT" in short.text and "明显异动" in short.text and "CAND" in short.text
+    assert "10:30 EDT" in short.text and ("明显异动" in short.text or "观察股异动" in short.text) and "CAND" in short.text
     assert "平均成本" not in short.text and "NYSE 已完成" not in short.html
     assert "&lt;script&gt;" in short.html and "<script>" not in short.html
     assert "NYSE 已完成" in close.text and "每日持仓报告" in close.subject
@@ -246,3 +246,58 @@ def test_pure_watchlist_in_close_summary_but_not_intraday():
     visible_html = intraday.html.split('<div aria-hidden="true"', 1)[0]
     assert "关注列表简报" not in intraday.text and "PURE" not in visible_html
     assert "STOCKWATCH_DATA_V1_BEGIN" in intraday.html
+
+
+def test_intraday_watchlist_top_three_by_absolute_move_without_targets():
+    from stockwatch.portfolio import calculate, Position
+    from stockwatch.reports import intraday_watchlist_highlights
+    from stockwatch.report_data import BEGIN, END
+    from decimal import Decimal
+    config = {"portfolio": {"language": "zh-CN"}, "watchlist": {symbol: {} for symbol in ("UP", "DOWN", "TIE", "SMALL", "HELD", "BAD", "STALE")}}
+    quotes = {"UP": Quote("UP", 107, 100, session=DAY, price_at=NOW),
+              "DOWN": Quote("DOWN", 90, 100, session=DAY, price_at=NOW),
+              "TIE": Quote("TIE", 110, 100, session=DAY, price_at=NOW),
+              "SMALL": Quote("SMALL", 106, 100, session=DAY, price_at=NOW),
+              "HELD": Quote("HELD", 130, 100, session=DAY, price_at=NOW),
+              "BAD": Quote("BAD", error="Data unavailable"),
+              "STALE": Quote("STALE", 140, 100, session=date(2026, 10, 5))}
+    book = calculate({"HELD": Position("HELD", Decimal(1), Decimal(100))}, quotes)
+    chosen = intraday_watchlist_highlights(config, quotes, {"HELD"}, DAY)
+    assert [quote.symbol for quote in chosen] == ["DOWN", "TIE", "UP"]
+    report = render_report(DAY, book, quotes, config, [], mode="INTRADAY", generated_at=NOW)
+    visible = report.html.split('<div aria-hidden="true"', 1)[0]
+    section = visible.split("观察股异动 ≥5%（最多3只）", 1)[1].split("</table>", 1)[0]
+    assert all(symbol in section for symbol in ("UP", "DOWN", "TIE"))
+    assert all(symbol not in section for symbol in ("SMALL", "HELD", "BAD", "STALE"))
+    assert "SMALL" not in visible  # Fourth mover is not duplicated in the generic movement section.
+    data = json.loads(report.text.split(BEGIN + "\n", 1)[1].split("\n" + END, 1)[0])
+    assert data["visible_watchlist_symbols"] == [quote.symbol for quote in chosen]
+    assert json.loads(report.data_json) == data
+    close = render_report(DAY, book, quotes, config, [], generated_at=NOW)
+    assert "观察股异动 ≥5%（最多3只）" not in close.html
+
+
+def test_intraday_watchlist_empty_one_and_stable_ties():
+    from stockwatch.reports import intraday_watchlist_highlights
+    config = {"watchlist": {"A": {}, "B": {}}}
+    assert not intraday_watchlist_highlights(config, {}, set(), DAY)
+    quotes = {"B": Quote("B", 90, 100, session=DAY), "A": Quote("A", 90, 100, session=DAY)}
+    assert [q.symbol for q in intraday_watchlist_highlights(config, quotes, set(), DAY)] == ["A", "B"]
+    assert [q.symbol for q in intraday_watchlist_highlights(config, quotes, {"B"}, DAY)] == ["A"]
+
+
+def test_intraday_watchlist_five_percent_boundary_and_quiet_pool_hidden():
+    from stockwatch.reports import intraday_watchlist_highlights
+    from stockwatch.portfolio import calculate
+    config = {"portfolio": {}, "watchlist": {"AT": {}, "QUIET": {}, "LOSS": {}}}
+    quotes = {"AT": Quote("AT", 105, 100, session=DAY),
+              "QUIET": Quote("QUIET", 104.99, 100, session=DAY),
+              "LOSS": Quote("LOSS", 95, 100, session=DAY)}
+    assert [q.symbol for q in intraday_watchlist_highlights(config, quotes, set(), DAY)] == ["AT", "LOSS"]
+    report = render_report(DAY, calculate({}, {}), quotes, config, [], mode="INTRADAY", generated_at=NOW)
+    visible = report.html.split('<div aria-hidden="true"', 1)[0]
+    assert "QUIET" not in visible
+    assert "QUIET" in report.data_json
+    quiet_config = {"portfolio": {}, "watchlist": {"QUIET": {}}}
+    quiet = render_report(DAY, calculate({}, {}), {"QUIET": quotes["QUIET"]}, quiet_config, [], mode="INTRADAY", generated_at=NOW)
+    assert "Watchlist moves" not in quiet.html and "QUIET" in quiet.data_json

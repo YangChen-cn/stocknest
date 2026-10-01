@@ -365,3 +365,13 @@ def test_settings_has_no_stock_search_and_cloud_controls_are_grouped(app):
     assert not cloud.proto.expanded
     assert any(w.label=="Enable cloud daily workflow" for w in cloud.button)
     assert next(w for w in app_test.text_input if w.label=="Benchmark ticker").value=="SPY"
+
+
+def test_dashboard_and_watchlist_offer_ai_download(app):
+    app_test, _ = app
+    app_test.run()
+    assert not app_test.exception
+    assert app_test.get("download_button")[0].proto.label == "Export current AI data (JSON)"
+    app_test.sidebar.radio[0].set_value("Watchlist & Alerts").run()
+    assert not app_test.exception
+    assert app_test.get("download_button")[0].proto.label == "Export current AI data (JSON)"

@@ -1,5 +1,5 @@
 """Localized Streamlit dashboard. No OpenBB imports or notification state writes."""
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -24,6 +24,7 @@ from stockwatch.providers.cached import ClosedSessionProvider, clear_market_cach
 from stockwatch.providers.demo import DemoProvider
 from stockwatch.providers.openbb_provider import OpenBBProvider
 from stockwatch.reports import money as format_money, percent as format_percent
+from stockwatch.report_data import report_data, serialize_data
 from stockwatch.services import candidate_rows, search_instruments, snapshot
 from stockwatch.storage import (COLUMNS, ROOT, WATCH_STATUSES, ValidationError, load_config, load_transactions,
                                 save_config, save_transactions, validate_transactions, ensure_user_files)
@@ -657,6 +658,42 @@ def performance_page(config, transactions, demo):
                 st.write(f"{symbol}: " + text("Stock split requires ledger reconciliation." if "split" in error else "Historical prices unavailable."))
 
 
+def ai_export(config, transactions, portfolio, quotes, as_of, demo, watchlist_rows=None):
+    """Download the visible snapshot without sending, fetching or updating state."""
+    now = datetime.now(timezone.utc)
+    completed = DemoProvider().session if demo else latest_session(now)
+    mode = "CLOSE" if as_of <= completed else "INTRADAY"
+    history = None
+    history_status = "not_loaded" if demo else "missing"
+    if not demo:
+        try:
+            history = load_history(ROOT / "data/performance.json")
+            if history:
+                benchmark = config["portfolio"].get("benchmark", DEFAULT_BENCHMARK)
+                if history["fingerprint"] != fingerprint(transactions, benchmark):
+                    history, history_status = None, "transactions_or_benchmark_changed"
+                elif not history["points"] or history["points"][-1]["date"] > completed.isoformat():
+                    history, history_status = None, "invalid_cutoff"
+                else:
+                    history_status = "current" if history["points"][-1]["date"] == completed.isoformat() else "outdated"
+        except (ValidationError, OSError):
+            history, history_status = None, "unavailable"
+    data = report_data(as_of, portfolio, quotes, config, [], mode=mode, generated_at=now,
+                       demo=demo, performance=history, watchlist_rows=watchlist_rows)
+    data.update(origin="dashboard_export", price_basis="dashboard_snapshot_may_be_cached",
+                alert_evaluation="not_evaluated", performance_status=history_status)
+    for item in data["instruments"]:
+        if item["symbol"] not in quotes:
+            item["data_status"] = "not_loaded"
+    data["conventions"]["alerts"] = "Configured thresholds only; this export does not evaluate or consume alerts"
+    data["data_quality"]["not_loaded_symbols"] = [item["symbol"] for item in data["instruments"] if item["data_status"] == "not_loaded"]
+    data["data_quality"]["unavailable_symbols"] = [item["symbol"] for item in data["instruments"] if item["data_status"] == "unavailable"]
+    st.download_button(text("Export current AI data (JSON)"), serialize_data(data).encode("utf-8"),
+                       file_name=f"stockwatch-{as_of}-{mode.lower()}-snapshot.json", mime="application/json",
+                       on_click="ignore", key="ai_snapshot_download")
+    st.caption(text("Exports loaded prices, holdings, optional notes and local history. Unloaded watchlist values are null; alerts are not evaluated. Refresh prices first if needed."))
+
+
 def main(app_name: str = "StockWatch"):
     st.set_page_config(page_title=app_name, page_icon="📈", layout="wide")
     try:
@@ -710,6 +747,8 @@ def main(app_name: str = "StockWatch"):
         with st.spinner(text("Loading portfolio…")):
             portfolio, quotes, histories = cached_watchlist_snapshot(config, [tx.row() for tx in transactions], as_of, demo)
         chart_day = DemoProvider().session if demo else latest_session()
+        ai_export(config, transactions, portfolio, quotes, as_of, demo,
+                  candidate_rows(config, {row["symbol"] for row in portfolio["holdings"]}, quotes, histories, chart_day))
         watchlist_page(config_path, config, quotes, demo, portfolio, chart_day, histories)
         return
     with st.spinner(text("Loading portfolio…")):
@@ -721,6 +760,8 @@ def main(app_name: str = "StockWatch"):
         with st.expander(text("HSBC trade import")):
             hsbc_control(config_path, config, demo)
     summary(portfolio)
+    if page == "Dashboard":
+        ai_export(config, transactions, portfolio, quotes, as_of, demo)
     unavailable = [symbol for symbol, quote in quotes.items() if quote.error or quote.price is None]
     if unavailable:
         st.warning(text("Data unavailable: {symbols}. Missing holdings are not treated as zero.", symbols=", ".join(unavailable)))

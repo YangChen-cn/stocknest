@@ -4,6 +4,11 @@ import re
 LANGUAGES = {"zh-CN": "简体中文", "en": "English"}
 
 ZH = {
+    "Watchlist moves ≥5% (up to 3)": "观察股异动 ≥5%（最多3只）",
+    "Absolute daily change reaches 5%; ranked by magnitude. Normal-session snapshots, not final closes.": "当日涨跌幅绝对值达到5%，按幅度排序；正常交易时段快照，并非最终收盘价。",
+    "{symbol}: {price} · Today {daily} · Price time {time} New York": "{symbol}：{price} · 当日 {daily} · 行情时间 {time}（美东）",
+    "Export current AI data (JSON)": "导出当前 AI 数据（JSON）",
+    "Exports loaded prices, holdings, optional notes and local history. Unloaded watchlist values are null; alerts are not evaluated. Refresh prices first if needed.": "导出已加载行情、持仓、可选备注和本地历史。未加载的观察股数据为 null，不重新检查提醒；需要最新行情可先点击「刷新行情」。",
     "Report mode: {mode}": "报告模式：{mode}",
     "Price time: {time} New York": "行情时间：美东 {time}",
     "StockWatch Intraday": "StockWatch 盘中简报",
