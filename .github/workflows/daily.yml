@@ -21,6 +21,10 @@ on:
         description: 重新回补历史表现（收盘模式）
         type: boolean
         default: false
+      sync_only:
+        description: 仅同步汇丰成交，不生成或发送日报
+        type: boolean
+        default: false
       force_send:
         description: 强制重发所选模式的报告，提醒仍去重（Force send）
         type: boolean
@@ -37,7 +41,7 @@ jobs:
   daily:
     if: github.ref == 'refs/heads/main' && github.event.repository.private == true
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 65
     steps:
       - name: Checkout latest main
         uses: actions/checkout@v4
@@ -63,6 +67,7 @@ jobs:
           SCHEDULED: ${{ github.event_name == 'schedule' }}
           DRY_RUN: ${{ inputs.dry_run }}
           REBUILD_PERFORMANCE: ${{ inputs.rebuild_performance }}
+          SYNC_ONLY: ${{ inputs.sync_only }}
           FORCE_SEND: ${{ inputs.force_send }}
           REPORT_MODE: ${{ github.event_name == 'schedule' && (github.event.schedule == '30 10 * * 1-5' && 'INTRADAY' || 'CLOSE') || inputs.mode || 'CLOSE' }}
         run: |
@@ -71,15 +76,21 @@ jobs:
           if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
           if [ "$FORCE_SEND" = "true" ]; then args+=(--force-send); fi
           if [ "$REBUILD_PERFORMANCE" = "true" ]; then args+=(--rebuild-performance); fi
+          if [ "$SYNC_ONLY" = "true" ]; then args+=(--sync-only); fi
           python -m stockwatch.daily "${args[@]}"
       - name: Validate and persist notification state
         if: always() && (steps.report.outcome == 'success' || steps.report.outcome == 'failure')
         run: |
           python -c 'from pathlib import Path; from stockwatch.storage import load_state; load_state(Path("data/state.json"))'
           python -c 'from pathlib import Path; from stockwatch.performance import load_history; load_history(Path("data/performance.json"))'
-          git add -f -- data/state.json
+          if [ -f data/state.json ]; then git add -f -- data/state.json; fi
           if [ -f data/performance.json ]; then git add -f -- data/performance.json; fi
-          if ! git diff --cached --quiet -- data/state.json data/performance.json; then
+          if [ -f data/hsbc_imports.json ]; then
+            python -c 'from pathlib import Path; from stockwatch.imports.hsbc import load_import_state; load_import_state(Path("data/hsbc_imports.json"))'
+            python -c 'from pathlib import Path; from stockwatch.storage import load_transactions; load_transactions(Path("data/transactions.csv"))'
+            git add -f -- data/transactions.csv data/hsbc_imports.json
+          fi
+          if ! git diff --cached --quiet -- data/state.json data/performance.json data/transactions.csv data/hsbc_imports.json; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git commit -m "chore: update StockWatch state [skip ci]"
@@ -107,5 +118,7 @@ jobs:
             logs/*.log
             data/state.json
             data/performance.json
+            data/transactions.csv
+            data/hsbc_imports.json
           retention-days: 3
           if-no-files-found: ignore

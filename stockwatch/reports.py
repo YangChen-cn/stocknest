@@ -164,3 +164,17 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
 <p style="font-size:12px;color:#666;margin-top:24px">{escape(lines[-3])}<br>{escape(lines[-2])}<br>{escape(lines[-1])}</p>
 </div></body></html>"""
     return Report(subject, "\n".join(lines) + "\n", html)
+
+
+def render_failure(session: date, reason: str, symbols: list[str], attempts: int, lang: str, *, mode="CLOSE") -> Report:
+    heading = t("StockWatch report error", lang)
+    lines = [heading, str(session), t(reason, lang),
+             t("Checks attempted: {attempts}", lang, attempts=attempts),
+             t("No portfolio report was marked sent; price alerts remain pending.", lang)]
+    if symbols:
+        lines.append(t("Unavailable symbols: {symbols}", lang, symbols=", ".join(symbols)))
+    subject = f"{heading} | {mode} | {session}"
+    html = (f'<!doctype html><html lang="{lang}"><meta charset="UTF-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:Arial;padding:16px">'
+            + "".join(f"<p>{escape(line)}</p>" for line in lines) + '</body></html>')
+    return Report(subject, "\n".join(lines), html)

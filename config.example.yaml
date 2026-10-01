@@ -6,3 +6,8 @@ portfolio:
 notifications:
   email_enabled: true
 watchlist: {}                  # targets and alerts are completely optional
+imports:
+  hsbc:
+    enabled: false            # opt in to read-only Gmail execution imports
+    allow_email_date: true    # use email date in New York if trade date is absent
+    lookback_days: 30

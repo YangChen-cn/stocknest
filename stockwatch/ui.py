@@ -7,6 +7,8 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from stockwatch.imports.gmail import sync_hsbc
+from stockwatch.imports.hsbc import HSBCSyncError
 from stockwatch.calendar import current_price_session, latest_session
 from stockwatch.history import period_start
 from stockwatch.performance import DEFAULT_BENCHMARK, build_history, load_history, fingerprint, period_returns
@@ -308,8 +310,45 @@ def email_control(path, config, demo):
     st.caption(text("This switch controls sending only; reports and history continue. Sync to apply it in GitHub Actions."))
 
 
+def hsbc_control(path, config, demo, *, settings=False):
+    options = config.get("imports", {}).get("hsbc", {})
+    if settings:
+        with st.form("hsbc_settings"):
+            enabled = st.checkbox(text("Automatically import completed HSBC trades"), value=options.get("enabled", False))
+            allow_date = st.checkbox(text("Use the email New York date when execution date is missing"), value=options.get("allow_email_date", True))
+            st.caption(text("Email date is an estimate, not a confirmed execution date. Delayed emails can have the wrong trade date."))
+            days = st.number_input(text("HSBC email lookback (days)"), min_value=1, max_value=365, value=options.get("lookback_days", 30))
+            saved = st.form_submit_button(text("Save HSBC settings"), disabled=demo)
+        if saved:
+            try:
+                updated = load_config(path)
+                updated["imports"] = {"hsbc": {"enabled": enabled, "allow_email_date": allow_date, "lookback_days": days}}
+                save_config(path, updated)
+                st.session_state["_stockwatch_notice"] = "HSBC settings saved. Sync with GitHub to apply them in the cloud."
+                st.rerun()
+            except (ValidationError, OSError) as exc:
+                st.error(localized_error(exc) if not isinstance(exc, OSError) else text("Save failed; original file preserved."))
+    if st.button(text("Sync HSBC trades now"), disabled=demo or not options.get("enabled", False), key="hsbc_now"):
+        try:
+            present = configuration_status()
+            if present["GMAIL_ADDRESS"] and present["GMAIL_APP_PASSWORD"]:
+                with st.spinner(text("Reading HSBC confirmations…")):
+                    result = sync_hsbc(load_config(path), ROOT / "data/transactions.csv", ROOT / "data/hsbc_imports.json")
+                cached_snapshot.clear()
+                cached_performance_preview.clear()
+                st.success(text("HSBC sync: {imported} imported, {duplicates} duplicates, {skipped} skipped", **result))
+            else:
+                trigger_workflow(ROOT, "CLOSE", dry_run=False, sync_only=True)
+                st.success(text("Cloud HSBC sync queued; it sends no email. After completion, use GitHub sync to pull the new transactions."))
+        except (HSBCSyncError, ControlError, ValidationError, OSError) as exc:
+            st.error(localized_error(exc) if not isinstance(exc, OSError) else text("Save failed; original file preserved."))
+    st.caption(text("Only completed USD orders are imported. Missing execution dates are skipped unless email-date estimates are enabled. Local settings must be synced before cloud runs."))
+
+
 def control_center(path, config, demo):
     st.subheader(text("Control Center"))
+    with st.expander(text("HSBC trade import")):
+        hsbc_control(path, config, demo, settings=True)
     email_control(path, config, demo)
     if st.button(text("Sync notification setting with GitHub"), disabled=demo):
         try:
@@ -530,6 +569,8 @@ def main(app_name: str = "StockWatch"):
         return
     if page == "Dashboard":
         email_control(config_path, config, demo)
+        with st.expander(text("HSBC trade import")):
+            hsbc_control(config_path, config, demo)
     summary(portfolio)
     unavailable = [symbol for symbol, quote in quotes.items() if quote.error or quote.price is None]
     if unavailable:

@@ -1,13 +1,14 @@
-"""Explicit user-initiated synchronization of the two editable data files."""
+"""Explicit user-initiated synchronization of configuration, transactions and import audit."""
 import subprocess
 from pathlib import Path
 
 from stockwatch.control import ControlError, _command, repository, gh_path
 from stockwatch.i18n import UserFacingError
 
+from stockwatch.imports.hsbc import load_import_state
 from stockwatch.storage import load_config, load_transactions
 
-EDITABLE = {"config.yaml", "data/transactions.csv"}
+EDITABLE = {"config.yaml", "data/transactions.csv", "data/hsbc_imports.json"}
 
 
 class SyncError(UserFacingError, RuntimeError):
@@ -28,6 +29,8 @@ def _git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProc
 def sync(root: Path) -> str:
     load_config(root / "config.yaml")
     load_transactions(root / "data/transactions.csv")
+    if (root / "data/hsbc_imports.json").exists():
+        load_import_state(root / "data/hsbc_imports.json")
     if Path(_git(root, "rev-parse", "--show-toplevel").stdout.strip()).resolve() != root.resolve():
         raise SyncError("This project must be the Git repository root.")
     if _git(root, "branch", "--show-current").stdout.strip() != "main":
@@ -51,7 +54,7 @@ def sync(root: Path) -> str:
             raise SyncError("Personal configuration can only sync to a verified private GitHub repository.")
     _git(root, "fetch", "origin", "main")
     if entries:
-        _git(root, "add", "--", *sorted(EDITABLE))
+        _git(root, "add", "-f", "--", *sorted(path for path in EDITABLE if (root / path).exists()))
         _git(root, "commit", "-m", "chore: update StockWatch portfolio configuration")
     result = _git(root, "rebase", "origin/main", check=False)
     if result.returncode:

@@ -246,3 +246,20 @@ def test_chinese_control_center_toggle_and_preview(app):
     assert not (root / "data/performance.json").exists()
     next(select for select in app_test.selectbox if select.label == "时间范围").set_value("5D").run()
     assert not app_test.exception
+
+
+def test_hsbc_settings_and_cloud_sync_only_entry(app, monkeypatch):
+    app_test, root=app
+    save_config(root / "config.yaml", {"portfolio":{"language":"zh-CN"},"watchlist":{}})
+    app_test.run()
+    app_test.sidebar.radio[0].set_value("Settings").run()
+    next(box for box in app_test.checkbox if box.label=="自动导入汇丰已完成成交").set_value(True)
+    next(button for button in app_test.button if button.label=="保存汇丰导入设置").click().run()
+    assert not app_test.exception and load_config(root / "config.yaml")["imports"]["hsbc"]["enabled"]
+    app_test.sidebar.radio[0].set_value("Dashboard").run()
+    calls=[]
+    monkeypatch.setattr("stockwatch.ui.configuration_status", lambda:{"GMAIL_ADDRESS":False,"GMAIL_APP_PASSWORD":False,"REPORT_EMAIL":False})
+    monkeypatch.setattr("stockwatch.ui.trigger_workflow", lambda *a,**kw:calls.append(kw))
+    next(button for button in app_test.button if button.label=="立即同步 HSBC 成交记录").click().run()
+    assert not app_test.exception and calls==[{"dry_run":False,"sync_only":True}]
+    assert "不发送日报" in app_test.success[0].value

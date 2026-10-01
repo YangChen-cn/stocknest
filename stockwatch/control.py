@@ -75,11 +75,11 @@ def set_workflow_enabled(root: Path, enabled: bool):
     _command([gh_path(), "workflow", "enable" if enabled else "disable", "daily.yml", "--repo", repository(root)], root=root)
 
 
-def trigger_workflow(root: Path, mode="CLOSE", *, dry_run=True):
+def trigger_workflow(root: Path, mode="CLOSE", *, dry_run=True, sync_only=False):
     if mode not in ("CLOSE", "INTRADAY"):
         raise ControlError("Invalid report mode.")
     _command([gh_path(), "workflow", "run", "daily.yml", "--repo", repository(root), "--ref", "main",
-              "-f", f"mode={mode}", "-f", f"dry_run={str(dry_run).lower()}", "-f", "force_send=false"], root=root)
+              "-f", f"mode={mode}", "-f", f"dry_run={str(dry_run).lower()}", "-f", "force_send=false"] + (["-f", "sync_only=true"] if sync_only else []), root=root)
 
 
 def _plist_path() -> Path:

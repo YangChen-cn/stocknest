@@ -80,11 +80,11 @@ git commit -m "chore: configure personal portfolio"
 git push origin main
 ```
 
-The UI sync button also checks GitHub repository privacy before committing. It commits only config/transactions, pulls remote history/state, and preserves conflicts. A source checkout without a GitHub origin shows unavailable cloud controls and remains usable locally.
+The UI sync button also checks GitHub repository privacy before committing. It commits only config/transactions/import audit, pulls remote history/state, and preserves conflicts. A source checkout without a GitHub origin shows unavailable cloud controls and remains usable locally.
 
 Add three repository Secrets: `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`, `REPORT_EMAIL`. Actions → StockWatch Daily → Run workflow supports CLOSE/INTRADAY, dry-run, force resend and performance rebuild. Scheduled runs use America/New_York at 10:30 and 18:30 weekdays; NYSE calendar gates holidays, weekends, early closes and incomplete sessions. GitHub scheduling can be delayed.
 
-CI runs pytest and pip checks separately. Daily jobs use `requirements-runtime.lock` without Streamlit, Plotly or pytest. In a private copy only, the bot commits exactly state/performance with `[skip ci]`, using `contents: write`, concurrency and no force push. Three-day private artifacts contain logs and recovery files. If sending succeeds but pushing fails, restore the artifact state/history before rerunning to avoid duplicate mail. This lightweight SMTP/Git setup cannot guarantee exactly-once delivery after a crash.
+CI runs pytest and pip checks separately. Daily jobs use `requirements-runtime.lock` without Streamlit, Plotly or pytest. In a private copy only, the bot commits state/performance and, when HSBC imports exist, transactions/import audit with `[skip ci]`, using `contents: write`, concurrency and no force push. Three-day private artifacts contain logs and recovery files. If sending succeeds but pushing fails, restore the affected artifact state/history/transactions/import audit before rerunning to avoid duplicate mail. This lightweight SMTP/Git setup cannot guarantee exactly-once delivery after a crash.
 
 ## macOS startup
 
@@ -116,3 +116,34 @@ Tests use synthetic data, fake providers/SMTP and temporary Git repositories; no
 ## License
 
 [GNU AGPL-3.0-only](LICENSE). Dependencies retain their own licenses; consult the pinned package metadata.
+
+
+## Close-data checks and HSBC execution imports
+
+CLOSE checks all configured holdings/watchlist quotes for the target NYSE session and a valid previous close before delivery. Missing or stale quotes cause up to **three checks, ten minutes apart** (`--close-attempts 1..3`, `--close-retry-seconds 600..900`). No partial daily report is sent during this wait. Exhaustion sends one error notification per session and exits nonzero; price alerts and the regular report remain pending. A later run can send the recovered report. Dry-run/demo and runs without active email settings do not wait or send error mail. Insufficient 5D/1M history can still show unavailable without blocking a current, otherwise complete report. Runner waiting time counts towards Actions minutes; the workflow has a bounded 65-minute timeout.
+
+HSBC HK email import is optional and disabled in `config.example.yaml`. Enable **HSBC execution sync** in Settings, or set:
+
+```yaml
+imports:
+  hsbc:
+    enabled: true
+    allow_email_date: true
+    lookback_days: 30
+```
+
+The importer uses read-only Gmail IMAP and the existing `GMAIL_ADDRESS` / `GMAIL_APP_PASSWORD` environment variables or Actions Secrets, independently of Codex's Gmail connector. Personal Gmail supports App Password clients with two-step verification; managed accounts may have administrator restrictions ([Google guidance](https://support.google.com/mail/answer/75726?hl=en)). No new token or package is required.
+
+Only the supported Traditional Chinese **fully executed** USD confirmation format is accepted, with Gmail DKIM/DMARC authentication, matching reference/symbol/side, zero remaining quantity and matching current/cumulative quantities. Partial/multiple-fill, cancelled, unknown or ambiguous confirmations are skipped with a reason code; raw emails are not stored. If a trade date is absent, the default uses the email Date converted to America/New_York and records that estimate. Delayed emails can therefore need manual date correction; disable `allow_email_date` to skip them instead. Non-session dates are never guessed. Fees absent from email default to zero and should be checked manually.
+
+Both scheduled modes sync before calculating the portfolio. **Sync HSBC executions now** reads locally when Gmail variables exist; otherwise it dispatches the private workflow with `sync_only=true`, without sending a report. Sync local settings to Git first, then pull the resulting cloud ledger with Git Sync. CLI examples:
+
+```sh
+python -m stockwatch.daily --sync-only --dry-run  # read and preview; no writes/mail
+python -m stockwatch.daily --sync-only            # import only; no report/mail
+python -m stockwatch.daily --skip-hsbc --dry-run  # no Gmail access
+```
+
+Trade IDs are retained in CSV notes as `[HSBC:ID]` and in ignored `data/hsbc_imports.json`. Repeated reads do not duplicate entries; manually deleted/changed entries are not silently restored. An identical unmarked manual row is skipped for explicit reconciliation. Keep the reference when editing fees/notes. CSV is written before the audit file so interrupted writes still retain the deduplication ID.
+
+The private workflow's persistence whitelist includes state, performance, transactions and import audit. Recovery artifacts include all four files, never raw email. After a push conflict, compare and restore **all affected files** before rerunning. Public Actions remain gated to private repositories; never commit real CSV/audit/config files in a public fork. Git Sync only stages configuration, transactions and import audit after checking repository privacy. SMTP acceptance and Git persistence still cannot guarantee exactly-once delivery across crashes.

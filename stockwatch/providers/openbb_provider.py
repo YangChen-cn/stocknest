@@ -112,6 +112,9 @@ class OpenBBProvider:
         self.attempts = attempts
         self._history_cache = {}
 
+    def clear_cache(self):
+        self._history_cache.clear()
+
     def get_intraday_quote(self, symbol: str, session: date, now: datetime | None = None) -> Quote:
         now = now or datetime.now(timezone.utc)
         if active_session(now) != session:

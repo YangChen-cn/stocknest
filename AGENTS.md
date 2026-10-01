@@ -33,7 +33,7 @@
 
 ## 隐私与文件边界
 
-- `config.yaml`、`data/transactions.csv`、`data/state.json`、`data/performance.json` 是用户数据；`.gitignore` 默认排除整个 `data/` 和本地配置。
+- `config.yaml`、`data/transactions.csv`、`data/state.json`、`data/performance.json`、`data/hsbc_imports.json` 是用户数据；`.gitignore` 默认排除整个 `data/` 和本地配置。
 - 公开版只提供 `config.example.yaml`、空交易模板及完全虚构的 `examples/`。真实持仓、目标价、投资笔记、邮箱、机器绝对路径、Secrets、日志、报告、缓存不得进入公开提交或截图。
 - 公开推送前暂存预期文件，检查 `git diff --cached`，运行 `python tools/check_public_release.py`；扫描当前文件和完整可达历史，并人工复核 Demo、截图与提交身份。启发式扫描不能替代人工检查。
 - 公开版绝对不 `git add -f` 用户文件。私人版只有在核验仓库确实私有、数据变更获授权后，才可按明确文件路径提交；禁止 `git add -A` 盲目带入生成文件。
@@ -64,11 +64,21 @@
 - 邮件成功后才消费提醒、记录报告已发送；配置缺失、关闭通知或 SMTP 失败保留待通知提醒。历史保存独立于邮件发送。
 - Demo、dry-run 和 INTRADAY 不修改正式历史；Dashboard 不写提醒状态；本地预览使用被忽略的独立路径。
 
+## 汇丰成交邮件与收盘重试
+
+- 汇丰同步只读取 Gmail，不连接券商。复用环境变量 App Password、标准库只读 IMAP；不得保存原始邮件、账号资料或 connector token。
+- 导入默认关闭；启用后，缺少明确成交日期默认采用邮件发送时间对应的美东日期，并记录 `email_new_york` 来源。邮件日期可能晚于实际成交，允许关闭估算；不猜测非交易日日期。
+- 仅接受发件人及 Gmail DKIM / DMARC 验证通过、固定格式的全部执行 USD 订单，剩余数量为零、当前与累计成交数量一致。未知、部分、多次成交、取消、歧义或无法解析记录只记录原因并跳过。
+- 用交易编号和 CSV 备注 `[HSBC:编号]` 幂等，CSV 先保存编号、审计记录随后原子写入；不要删除编号。手工交易撞单必须明确核对绑定，不按价格和数量猜测。手工删改记录不自动恢复。邮件无手续费时费用为零，需用户核对。
+- 两次日报先同步再计算；同步失败不发送可能漏持仓的常规日报。Dashboard 本地无 Gmail 环境变量时可触发私人 Actions 的 `sync_only`，不发送邮件；随后拉取交易文件。
+- CLOSE 目标日价格或前收盘缺失 / 过期时最多检查三轮，默认间隔 10 分钟，每轮清除行情缓存。期间不发送残缺报告、不消费提醒；最终仅发送一次该 session 的错误通知，正常日报仍待发送。后续恢复可发送正常报告。dry-run / Demo 不等待、不发邮件、不写导入记录。
+- 邮件数据检查不要求不足一个月的新股必须有完整历史区间；缺少历史锚点仍显示不可用，不能伪造收益。
+
 ## Actions 与本机控制
 
 - CI 与日报分开：CI 检查测试、依赖和精简 runtime；日报不在每次发送前跑完整测试。
 - 保留纽约时区 10:30 / 18:30 两次工作日调度、NYSE 假日 / 提前收盘校验、默认分支限制和串行 concurrency。
-- 公开版日报 job 必须受仓库私有条件保护。私人版 Actions 只自动提交 `data/state.json`、`data/performance.json`，使用既有 `[skip ci]` 信息，保留恢复 artifact 和推送冲突失败逻辑。
+- 公开版日报 job 必须受仓库私有条件保护。私人版 Actions 只自动提交 `data/state.json`、`data/performance.json`，以及已启用汇丰导入时的 `data/transactions.csv`、`data/hsbc_imports.json`，使用既有 `[skip ci]` 信息，保留恢复 artifact 和推送冲突失败逻辑。
 - 不提交报告、行情、cache 或构建文件；不强推、不引入 push 触发日报循环。SMTP 与 Git 不是原子事务，发送后推送失败必须明确报错并保留恢复文件。
 - macOS 复用每用户 launchd，只在登录后启动本地 Dashboard，不替代云端邮件。保持 localhost 绑定，检查端口占用，不自动覆盖其他工作区服务。
 - 核心依赖与 Dashboard / 测试依赖分离；更新依赖时同步 `requirements-runtime.lock`、`requirements.lock` 与项目声明，保持 headless daily 可运行。

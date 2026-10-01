@@ -223,6 +223,40 @@ ZH.update({
     "Closing report": "收盘日报", "Intraday brief": "盘中简报",
 })
 
+ZH.update({
+    "Config supports portfolio, watchlist, notifications and imports only.": "配置仅支持 portfolio、watchlist、notifications 和 imports。",
+    "imports supports hsbc only.": "交易导入目前仅支持汇丰邮件。",
+    "Invalid HSBC import settings.": "汇丰导入设置无效。",
+    "HSBC import switches must be true or false.": "汇丰导入开关必须为 true 或 false。",
+    "HSBC lookback must be between 1 and 365 days.": "汇丰邮件回溯天数必须在1至365之间。",
+    "HSBC sync: {imported} imported, {duplicates} duplicates, {skipped} skipped": "汇丰同步：导入{imported}笔，重复{duplicates}笔，跳过{skipped}封。",
+    "Close data incomplete: check {attempt}/{attempts}; unavailable: {symbols}": "收盘行情不完整：第{attempt}/{attempts}次检查；缺失股票：{symbols}。",
+    "Retrying close data in {seconds:g} seconds; no email or alert state consumed": "将在{seconds:g}秒后重试收盘行情；本次不发邮件，不消费提醒状态。",
+    "StockWatch report error": "StockWatch 日报错误通知",
+    "Checks attempted: {attempts}": "已检查{attempts}次。",
+    "No portfolio report was marked sent; price alerts remain pending.": "未标记持仓日报已发送；行情提醒仍待发送。",
+    "Unavailable symbols: {symbols}": "缺少行情的股票：{symbols}。",
+    "Close data remains unavailable; the daily report was not sent.": "收盘行情仍不完整，本次未发送持仓日报。",
+    "HSBC sync failed; the portfolio ledger may be incomplete.": "汇丰交易同步失败，交易账可能不完整，已暂停持仓日报。",
+    "HSBC trade import": "汇丰成交记录导入",
+    "Automatically import completed HSBC trades": "自动导入汇丰已完成成交",
+    "Use the email New York date when execution date is missing": "缺少成交日期时采用邮件的美东日期",
+    "Email date is an estimate, not a confirmed execution date. Delayed emails can have the wrong trade date.": "邮件日期是估算值，并非已核实成交日期；延迟邮件可能对应错误交易日。",
+    "HSBC email lookback (days)": "汇丰邮件回溯天数",
+    "Save HSBC settings": "保存汇丰导入设置",
+    "HSBC settings saved. Sync with GitHub to apply them in the cloud.": "汇丰导入设置已保存；同步到 GitHub 后云端才生效。",
+    "Sync HSBC trades now": "立即同步 HSBC 成交记录",
+    "Reading HSBC confirmations…": "正在读取汇丰成交确认邮件…",
+    "Cloud HSBC sync queued; it sends no email. After completion, use GitHub sync to pull the new transactions.": "云端汇丰同步已排队，不发送日报；完成后点击同步到 GitHub 拉取新交易。",
+    "Only completed USD orders are imported. Missing execution dates are skipped unless email-date estimates are enabled. Local settings must be synced before cloud runs.": "只导入已完成的 USD 订单；未开启邮件日期估算时，缺少成交日期会跳过。本地设置需先同步才能用于云端。",
+    "Transaction import is already running; retry later.": "已有交易导入任务在运行，请稍后重试。",
+    "Invalid HSBC import state; restore it before syncing.": "汇丰导入记录无效，请恢复后再同步。",
+    "Gmail credentials missing; configure the existing Gmail environment variables.": "缺少 Gmail 配置，请设置已有的 Gmail 环境变量。",
+    "Gmail read-only sync failed; check App Password and IMAP access.": "Gmail 只读同步失败，请检查应用专用密码和 IMAP 访问。",
+    "HSBC email exceeds the import size limit.": "汇丰邮件超过导入大小上限。",
+    "HSBC import currently requires macOS or Linux file locking.": "本地汇丰导入暂支持 macOS / Linux；其他系统可用云端同步。",
+})
+
 def language(config: dict) -> str:
     return config.get("portfolio", {}).get("language", "en")
 

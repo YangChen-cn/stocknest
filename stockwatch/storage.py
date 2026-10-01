@@ -129,15 +129,15 @@ def atomic_write(path: Path, text: str) -> None:
 def save_transactions(path: Path, rows: list[dict]) -> None:
     transactions = validate_transactions(rows)
     output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=COLUMNS)
+    writer = csv.DictWriter(output, fieldnames=COLUMNS, lineterminator="\n")
     writer.writeheader()
     writer.writerows(tx.row() for tx in transactions)
     atomic_write(path, output.getvalue())
 
 
 def validate_config(raw: Any) -> dict:
-    if not isinstance(raw, dict) or set(raw) - {"portfolio", "watchlist", "notifications"}:
-        raise ValidationError("Config supports portfolio, watchlist and notifications only.")
+    if not isinstance(raw, dict) or set(raw) - {"portfolio", "watchlist", "notifications", "imports"}:
+        raise ValidationError("Config supports portfolio, watchlist, notifications and imports only.")
     portfolio = raw.get("portfolio", {})
     if not isinstance(portfolio, dict) or set(portfolio) - {"base_currency", "language", "benchmark"} or portfolio.get("base_currency", "USD") != "USD":
         raise ValidationError("Only portfolio.base_currency: USD is supported.")
@@ -155,6 +155,20 @@ def validate_config(raw: Any) -> dict:
         if not isinstance(notifications, dict) or set(notifications) - {"email_enabled"} or not isinstance(notifications.get("email_enabled", True), bool):
             raise ValidationError("notifications.email_enabled must be true or false.")
         clean["notifications"] = {"email_enabled": notifications.get("email_enabled", True)}
+    if "imports" in raw:
+        imports = raw["imports"]
+        if not isinstance(imports, dict) or set(imports) - {"hsbc"}:
+            raise ValidationError("imports supports hsbc only.")
+        hsbc = imports.get("hsbc", {})
+        if not isinstance(hsbc, dict) or set(hsbc) - {"enabled", "allow_email_date", "lookback_days"}:
+            raise ValidationError("Invalid HSBC import settings.")
+        if any(not isinstance(hsbc.get(key, key == "allow_email_date"), bool) for key in ("enabled", "allow_email_date")):
+            raise ValidationError("HSBC import switches must be true or false.")
+        days = hsbc.get("lookback_days", 30)
+        if isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= 365:
+            raise ValidationError("HSBC lookback must be between 1 and 365 days.")
+        clean["imports"] = {"hsbc": {"enabled": hsbc.get("enabled", False),
+                                     "allow_email_date": hsbc.get("allow_email_date", True), "lookback_days": days}}
     for symbol, entry in watchlist.items():
         symbol = ticker(symbol)
         if symbol in clean["watchlist"]:
@@ -199,7 +213,7 @@ def validate_state(state: Any) -> dict:
         if not isinstance(rules, dict):
             raise ValidationError("Invalid state rule map.")
         if symbol == "_meta":
-            for key in ("last_report_session", "last_intraday_session"):
+            for key in ("last_report_session", "last_intraday_session", "last_close_error_session", "last_hsbc_error_close_session", "last_hsbc_error_intraday_session"):
                 sent = rules.get(key)
                 if sent is not None:
                     try:
