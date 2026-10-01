@@ -171,3 +171,5 @@ Holdings provides editable thesis/notes, even when empty. Notes preserve existin
 Dashboard/Holdings request holdings and opening-position prices only, avoiding unused candidate quotes. The candidate pool reuses the same provider's already-fetched daily history for 5D/1M analytics. Five-minute quote caches and refresh scoped to the active page reduce repeat requests; stock-name searches keep their separate cache. Free-provider/network latency can still affect a first load.
 
 Holding-note inputs and optional target/alert fields default to collapsed. Dashboard also provides a separate watchlist price chart below the holdings charts, with independent stock/period selectors; it fetches history only after you choose a stock.
+
+Settings removes the generic stock-search panel. The existing benchmark remains editable in a collapsed advanced section. Cloud workflow controls and macOS login controls are separately labeled and collapsed by default; enabling cloud reports manages the existing GitHub workflow, not a local scheduler.

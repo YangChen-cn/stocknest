@@ -458,70 +458,72 @@ def control_center(path, config, demo):
     st.subheader(text("Control Center"))
     with st.expander(text("HSBC trade import")):
         hsbc_control(path, config, demo, settings=True)
-    email_control(path, config, demo)
-    if st.button(text("Sync notification setting with GitHub"), disabled=demo):
+    st.caption(text("Scheduled reports run in GitHub Actions, even when this computer is off. These controls manage the existing cloud workflow."))
+    with st.expander(text("Cloud automation (GitHub Actions)"), expanded=False):
+        email_control(path, config, demo)
+        if st.button(text("Sync notification setting with GitHub"), disabled=demo):
+            try:
+                sync(ROOT)
+                st.success(text("Configuration synced to GitHub."))
+            except (SyncError, ValidationError) as exc:
+                st.error(localized_error(exc))
+        st.markdown(f"**{text('GitHub Actions')}**")
+        if st.button(text("Refresh workflow status"), disabled=demo):
+            try:
+                st.session_state["_workflow_status"] = workflow_status(ROOT)
+            except ControlError as exc:
+                st.error(localized_error(exc))
+        status = st.session_state.get("_workflow_status") if not demo else None
+        if status:
+            st.write(f"{status['repository']} · {text(status['state'])}")
+            st.link_button(text("Open workflow"), status["url"])
+            for run in status["runs"]:
+                stamp = datetime.fromisoformat(run["created_at"].replace("Z", "+00:00")).astimezone(ZoneInfo("Asia/Hong_Kong")).strftime("%m-%d %H:%M HKT")
+                label = f"{stamp} · {text(run['status'])} · {text(run['conclusion'] or 'Pending')}"
+                st.link_button(label, run["html_url"])
+        with st.form("workflow_controls"):
+            mode_labels = {"CLOSE": text("Closing report"), "INTRADAY": text("Intraday brief")}
+            mode = st.selectbox(text("Report mode"), list(mode_labels), format_func=mode_labels.__getitem__)
+            dry_run = st.checkbox(text("Preview only (no email or state changes)"), value=True)
+            dispatch = st.form_submit_button(text("Run workflow"), disabled=demo)
+        if dispatch:
+            try:
+                trigger_workflow(ROOT, mode, dry_run=dry_run)
+                st.success(text("Workflow queued. Refresh status to see its result."))
+            except ControlError as exc:
+                st.error(localized_error(exc))
+        left, right = st.columns(2)
+        enable = left.button(text("Enable cloud daily workflow"), disabled=demo)
+        disable = right.button(text("Disable cloud daily workflow"), disabled=demo)
+        if enable or disable:
+            try:
+                set_workflow_enabled(ROOT, enable)
+                st.session_state["_workflow_status"] = workflow_status(ROOT)
+                st.success(text("Workflow setting updated."))
+            except ControlError as exc:
+                st.error(localized_error(exc))
+        st.caption(text("Uses your existing gh login. Disabling the daily workflow stops both schedules; CI stays enabled."))
+    with st.expander(text("macOS login startup"), expanded=False):
         try:
-            sync(ROOT)
-            st.success(text("Configuration synced to GitHub."))
-        except (SyncError, ValidationError) as exc:
-            st.error(localized_error(exc))
-    st.markdown(f"**{text('GitHub Actions')}**")
-    if st.button(text("Refresh workflow status"), disabled=demo):
-        try:
-            st.session_state["_workflow_status"] = workflow_status(ROOT)
+            local = service_status(ROOT)
+            st.write(text("Service: {state} · Login startup: {startup} · Port 8501: {port}",
+                          state=text("Running" if local["running"] else "Manual Dashboard or other process" if local["port_open"] else "Stopped"),
+                          startup=text("Enabled" if local["installed"] else "Disabled"),
+                          port=text("Responding" if local["port_open"] else "Closed")))
+            if local["supported"]:
+                cols = st.columns(3)
+                actions = ("Enable login startup", "Stop service", "Disable login startup")
+                funcs = (install_service, stop_service, uninstall_service)
+                for column, label, function in zip(cols, actions, funcs):
+                    if column.button(text(label), disabled=demo or label == "Stop service" and not local["loaded"]):
+                        function(ROOT)
+                        st.success(text("Service setting updated. Refresh the page to see its status."))
+            else:
+                st.info(text("Login startup is available only on macOS."))
         except ControlError as exc:
             st.error(localized_error(exc))
-    status = st.session_state.get("_workflow_status") if not demo else None
-    if status:
-        st.write(f"{status['repository']} · {text(status['state'])}")
-        st.link_button(text("Open workflow"), status["url"])
-        for run in status["runs"]:
-            stamp = datetime.fromisoformat(run["created_at"].replace("Z", "+00:00")).astimezone(ZoneInfo("Asia/Hong_Kong")).strftime("%m-%d %H:%M HKT")
-            label = f"{stamp} · {text(run['status'])} · {text(run['conclusion'] or 'Pending')}"
-            st.link_button(label, run["html_url"])
-    with st.form("workflow_controls"):
-        mode_labels = {"CLOSE": text("Closing report"), "INTRADAY": text("Intraday brief")}
-        mode = st.selectbox(text("Report mode"), list(mode_labels), format_func=mode_labels.__getitem__)
-        dry_run = st.checkbox(text("Preview only (no email or state changes)"), value=True)
-        dispatch = st.form_submit_button(text("Run workflow"), disabled=demo)
-    if dispatch:
-        try:
-            trigger_workflow(ROOT, mode, dry_run=dry_run)
-            st.success(text("Workflow queued. Refresh status to see its result."))
-        except ControlError as exc:
-            st.error(localized_error(exc))
-    left, right = st.columns(2)
-    enable = left.button(text("Enable daily workflow"), disabled=demo)
-    disable = right.button(text("Disable daily workflow"), disabled=demo)
-    if enable or disable:
-        try:
-            set_workflow_enabled(ROOT, enable)
-            st.session_state["_workflow_status"] = workflow_status(ROOT)
-            st.success(text("Workflow setting updated."))
-        except ControlError as exc:
-            st.error(localized_error(exc))
-    st.caption(text("Uses your existing gh login. Disabling the daily workflow stops both schedules; CI stays enabled."))
-    st.markdown(f"**{text('macOS login startup')}**")
-    try:
-        local = service_status(ROOT)
-        st.write(text("Service: {state} · Login startup: {startup} · Port 8501: {port}",
-                      state=text("Running" if local["running"] else "Manual Dashboard or other process" if local["port_open"] else "Stopped"),
-                      startup=text("Enabled" if local["installed"] else "Disabled"),
-                      port=text("Responding" if local["port_open"] else "Closed")))
-        if local["supported"]:
-            cols = st.columns(3)
-            actions = ("Enable login startup", "Stop service", "Disable login startup")
-            funcs = (install_service, stop_service, uninstall_service)
-            for column, label, function in zip(cols, actions, funcs):
-                if column.button(text(label), disabled=demo or label == "Stop service" and not local["loaded"]):
-                    function(ROOT)
-                    st.success(text("Service setting updated. Refresh the page to see its status."))
-        else:
-            st.info(text("Login startup is available only on macOS."))
-    except ControlError as exc:
-        st.error(localized_error(exc))
-    st.caption(text("Enabling login startup only registers the next login and leaves this Dashboard running. To switch now, stop the manual terminal process, then run python -m stockwatch.control start in that terminal."))
-    st.caption(text("Login startup runs only the local Dashboard on 127.0.0.1:8501, not email jobs. Stopping it disconnects this page; cloud schedules continue."))
+        st.caption(text("Enabling login startup only registers the next login and leaves this Dashboard running. To switch now, stop the manual terminal process, then run python -m stockwatch.control start in that terminal."))
+        st.caption(text("Login startup runs only the local Dashboard on 127.0.0.1:8501, not email jobs. Stopping it disconnects this page; cloud schedules continue."))
 
 
 def settings_page(path: Path, config: dict, demo: bool):
@@ -529,15 +531,16 @@ def settings_page(path: Path, config: dict, demo: bool):
     st.selectbox(text("Base currency"), ["USD"], format_func={"USD": text("USD")}.__getitem__)
     selected_language = st.selectbox(text("Language"), list(LANGUAGES), index=list(LANGUAGES).index(st.session_state["_stockwatch_language"]), format_func=LANGUAGES.get)
     st.caption(text("Data provider: OpenBB / yfinance · local files · no brokerage access"))
-    benchmark = symbol_picker("benchmark", [config["portfolio"].get("benchmark", DEFAULT_BENCHMARK)], demo)
-    st.caption(text("Benchmark: price return, excluding dividends."))
+    with st.expander(text("Advanced: performance benchmark"), expanded=False):
+        benchmark = st.text_input(text("Benchmark ticker"), value=config["portfolio"].get("benchmark", DEFAULT_BENCHMARK), max_chars=20).strip().upper()
+        st.caption(text("Benchmark: price return, excluding dividends."))
     if st.button(text("Save settings"), disabled=demo):
         try:
             save_config(path, {**config, "portfolio": {**config["portfolio"], "language": selected_language, "benchmark": benchmark or config["portfolio"].get("benchmark", DEFAULT_BENCHMARK)}})
             st.session_state["_stockwatch_notice"] = "Settings saved locally."
             st.rerun()
-        except OSError:
-            st.error(text("Save failed; original file preserved."))
+        except (ValidationError, OSError) as exc:
+            st.error(localized_error(exc) if isinstance(exc, ValidationError) else text("Save failed; original file preserved."))
     gmail_controls(demo)
     st.subheader(text("GitHub sync"))
     st.write(text("Sync commits transactions and config, pulls remote updates including alert state, and pushes to main."))

@@ -352,3 +352,16 @@ def test_optional_dashboard_watch_chart_is_lazy_and_independent(app, monkeypatch
     assert not app_test.exception and requested==[("WATCH","1M")]
     next(w for w in app_test.selectbox if w.key=="dashboard_watchlist_history_period").set_value("5D").run()
     assert requested[-1]==("WATCH","5D")
+
+
+def test_settings_has_no_stock_search_and_cloud_controls_are_grouped(app):
+    app_test,_=app
+    app_test.run()
+    app_test.sidebar.radio[0].set_value("Settings").run()
+    assert not app_test.exception
+    assert not any(w.label=="Search stocks" for w in app_test.button)
+    assert not any(w.label=="Stock name or ticker" for w in app_test.text_input)
+    cloud=next(w for w in app_test.expander if w.label=="Cloud automation (GitHub Actions)")
+    assert not cloud.proto.expanded
+    assert any(w.label=="Enable cloud daily workflow" for w in cloud.button)
+    assert next(w for w in app_test.text_input if w.label=="Benchmark ticker").value=="SPY"
