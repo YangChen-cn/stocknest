@@ -242,4 +242,7 @@ def test_pure_watchlist_in_close_summary_but_not_intraday():
     assert "关注列表简报（收盘价）" in close.text and "PURE：$100.00 · 当日 +1.00% · 5D +2.00% · 1M +3.00%" in close.text
     assert "PURE" in close.html and "+3.00%" in close.html
     intraday = render_report(DAY, calculate({}, {}), quotes, config, [], mode="INTRADAY", watchlist_rows=facts)
-    assert "关注列表简报" not in intraday.text and "PURE" not in intraday.html
+    # The visible intraday report stays short; the hidden AI payload may include the pool.
+    visible_html = intraday.html.split('<div aria-hidden="true"', 1)[0]
+    assert "关注列表简报" not in intraday.text and "PURE" not in visible_html
+    assert "STOCKWATCH_DATA_V1_BEGIN" in intraday.html
