@@ -169,3 +169,5 @@ Stock search runs when a changed name/ticker is submitted with Enter or focus le
 Holdings provides editable thesis/notes, even when empty. Notes preserve existing watchlist settings and do not require targets/alerts. Nonempty holding notes appear in both text/HTML emails; blank notes are omitted and HTML is escaped. Holdings/Dashboard price charts list current holdings only; pure watched stocks live on Watchlist & Alerts.
 
 Dashboard/Holdings request holdings and opening-position prices only, avoiding unused candidate quotes. The candidate pool reuses the same provider's already-fetched daily history for 5D/1M analytics. Five-minute quote caches and refresh scoped to the active page reduce repeat requests; stock-name searches keep their separate cache. Free-provider/network latency can still affect a first load.
+
+Holding-note inputs and optional target/alert fields default to collapsed. Dashboard also provides a separate watchlist price chart below the holdings charts, with independent stock/period selectors; it fetches history only after you choose a stock.

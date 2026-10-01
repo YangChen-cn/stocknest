@@ -330,5 +330,25 @@ def test_holding_notes_edit_and_charts_exclude_watch_only_symbols(app, monkeypat
     next(w for w in app_test.button if w.label=="Save holding notes").click().run()
     assert not app_test.exception
     assert load_config(root/"config.yaml")["watchlist"]["XYZ"]["thesis"]=="Personal note"
-    assert all(symbols==["XYZ"] for symbols in selected)
+    assert selected[-1]==["XYZ"]
     assert load_config(root/"config.yaml")["watchlist"]["WATCH"]["thesis"]=="observation"
+
+
+def test_optional_dashboard_watch_chart_is_lazy_and_independent(app, monkeypatch):
+    from stockwatch import ui
+    import pandas as pd
+    from datetime import date
+    app_test,root=app
+    save_config(root/"config.yaml",{"portfolio":{},"watchlist":{"WATCH":{}}})
+    requested=[]
+    def history(symbol,period,day,demo):
+        requested.append((symbol,period))
+        return pd.DataFrame({"date":[date(2026,9,28),date(2026,9,29)],"close":[10,11]})
+    monkeypatch.setattr(ui,"cached_history",history)
+    app_test.run()
+    watch=next(w for w in app_test.selectbox if w.label=="Watchlist stock")
+    assert watch.value is None and requested==[]
+    watch.set_value("WATCH").run()
+    assert not app_test.exception and requested==[("WATCH","1M")]
+    next(w for w in app_test.selectbox if w.key=="dashboard_watchlist_history_period").set_value("5D").run()
+    assert requested[-1]==("WATCH","5D")

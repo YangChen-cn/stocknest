@@ -171,19 +171,23 @@ def summary(portfolio: dict):
     st.caption(text("Daily P/L adjusts for recorded buys, sells and fees; trade-day returns use daily timing assumptions."))
 
 
-def chart_prices(symbols: list[str], as_of, demo: bool):
+def chart_prices(symbols: list[str], as_of, demo: bool, key="holdings", optional=False):
     if not symbols:
         return
     left, right = st.columns([3, 2])
-    symbol = left.selectbox(text("Price history"), symbols)
+    symbol = left.selectbox(text("Watchlist stock" if optional else "Price history"), symbols, index=None if optional else 0,
+                            placeholder=text("Select a watched stock to load its chart"), key=f"{key}_history_symbol")
     period_labels = {value: text(value) for value in PERIODS}
-    period = right.selectbox(text("Period"), PERIODS, index=1, format_func=period_labels.__getitem__)
+    period = right.selectbox(text("Period"), PERIODS, index=1, format_func=period_labels.__getitem__, key=f"{key}_history_period")
+    if symbol is None:
+        st.caption(text("Select a watched stock to load its chart"))
+        return
     try:
         with st.spinner(text("Loading daily prices…")):
             history = cached_history(symbol, period, as_of, demo)
         figure = px.line(history, x="date", y="close", title=f"{symbol} · {text(period)}", labels={"date": text("Date"), "close": text("Current Price")})
         figure.update_layout(xaxis_title=None, yaxis_title=text("USD"), margin=dict(l=10, r=10, t=40, b=10))
-        st.plotly_chart(figure, width="stretch")
+        st.plotly_chart(figure, width="stretch", key=f"{key}_price_chart")
     except (DataUnavailable, ValueError):
         st.info(text("Data unavailable: price history could not be loaded."))
 
@@ -279,7 +283,7 @@ def watchlist_page(path: Path, config: dict, quotes: dict, demo: bool, portfolio
         thesis = st.text_input(text("Thesis"), value=entry.get("thesis", ""), key=f"thesis_{symbol}")
         status_labels = {value: text(value) for value in WATCH_STATUSES}
         status = st.selectbox(text("Status"), WATCH_STATUSES, index=WATCH_STATUSES.index(entry.get("status", "watching")), format_func=status_labels.__getitem__, key=f"status_{symbol}")
-        with st.expander(text("Optional targets & alerts"), expanded=bool(entry.get("alerts") or entry.get("buy_below") or entry.get("target_shares"))):
+        with st.expander(text("Optional targets & alerts"), expanded=False):
             st.caption(text("Set a number to 0 to leave that optional target or alert unset."))
             buy_below = st.number_input(text("Buy Below"), min_value=0.0, value=float(entry.get("buy_below", 0)), step=0.01, key=f"buy_below_{symbol}")
             target = st.number_input(text("Target Shares"), min_value=0.0, value=float(entry.get("target_shares", 0)), step=1.0, key=f"target_{symbol}")
@@ -696,7 +700,7 @@ def main(app_name: str = "StockWatch"):
         for row in portfolio["holdings"]:
             entry = config["watchlist"].get(row["symbol"], {})
             symbol = row["symbol"]
-            with st.expander(text("Holding notes: {symbol}", symbol=symbol), expanded=not bool(entry.get("thesis"))):
+            with st.expander(text("Holding notes: {symbol}", symbol=symbol), expanded=False):
                 with st.form(f"holding_notes_{symbol}"):
                     thesis = st.text_area(text("Thesis"), value=entry.get("thesis", ""), key=f"holding_thesis_{symbol}")
                     st.caption(text("Notes are optional. Saving notes does not create a transaction or require a target price."))
@@ -727,4 +731,10 @@ def main(app_name: str = "StockWatch"):
     held_symbols = [row["symbol"] for row in portfolio["holdings"]]
     st.caption(text("Charts below show current holdings. Watch-only stocks are on Watchlist & Alerts."))
     chart_prices(held_symbols, chart_day, demo)
+    if page == "Dashboard":
+        st.subheader(text("Watchlist price chart"))
+        if config["watchlist"]:
+            chart_prices(list(config["watchlist"]), chart_day, demo, "dashboard_watchlist", True)
+        else:
+            st.caption(text("No watched stocks yet. Add them on Watchlist & Alerts."))
     st.caption(text("Price history ends at the latest completed NYSE session. Prices are cached for up to five minutes."))
