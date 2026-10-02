@@ -199,8 +199,8 @@ def test_workflow_permissions_schedule_and_file_whitelist():
     workflow = yaml.load((ROOT / ".github/workflows/daily.yml").read_text(), Loader=yaml.BaseLoader)
     assert workflow["permissions"] == {"contents": "write"}
     assert workflow["on"]["schedule"] == [
-        {"cron": "30 14 * * 1-5"}, {"cron": "30 15 * * 1-5"},
-        {"cron": "0 23 * * 1-5"}, {"cron": "0 0 * * 2-6"}]
+        {"cron": "23 14 * * 1-5"}, {"cron": "23 15 * * 1-5"},
+        {"cron": "53 22 * * 1-5"}, {"cron": "53 23 * * 1-5"}]
     assert set(workflow["on"]) == {"schedule", "workflow_dispatch"}
     assert workflow["concurrency"]["cancel-in-progress"] == "false"
     steps = workflow["jobs"]["daily"]["steps"]
@@ -213,6 +213,10 @@ def test_workflow_permissions_schedule_and_file_whitelist():
     assert steps.index(selector) < next(i for i, step in enumerate(steps) if step["name"] == "Set up Python")
     for name in ("Set up Python", "Install locked dependencies", "Generate and deliver daily report"):
         assert next(step for step in steps if step["name"] == name)["if"] == "steps.schedule.outputs.should_run == 'true'"
+    assert "inputs.scheduled" in command["env"]["SCHEDULED"]
+    assert workflow["on"]["workflow_dispatch"]["inputs"]["scheduled"]["default"] == "false"
+    assert "vars.STOCKWATCH_SCHEDULER" in workflow["jobs"]["daily"]["if"]
+    assert "github.event.repository.private == true" in workflow["jobs"]["daily"]["if"]
     persistence = next(step["run"] for step in steps if step["name"] == "Validate and persist notification state")
     assert "git add -f -- data/state.json" in persistence and "git add ." not in persistence
     assert "chore: update StockWatch state [skip ci]" in persistence

@@ -3,10 +3,10 @@ name: StockWatch Daily
 on:
   schedule:
     # Default UTC; preflight selects EDT/EST before installing dependencies.
-    - cron: '30 14 * * 1-5' # 10:30 EDT
-    - cron: '30 15 * * 1-5' # 10:30 EST
-    - cron: '0 23 * * 1-5'  # 19:00 EDT
-    - cron: '0 0 * * 2-6'   # 19:00 EST on the preceding New York weekday
+    - cron: '23 14 * * 1-5' # 10:23 EDT
+    - cron: '23 15 * * 1-5' # 10:23 EST
+    - cron: '53 22 * * 1-5' # 18:53 EDT
+    - cron: '53 23 * * 1-5' # 18:53 EST
   workflow_dispatch:
     inputs:
       mode:
@@ -14,6 +14,10 @@ on:
         type: choice
         options: [CLOSE, INTRADAY]
         default: CLOSE
+      scheduled:
+        description: 外部定时调用（校验纽约当天交易日；手动补发请关闭）
+        type: boolean
+        default: false
       dry_run:
         description: 仅生成报告，不发送邮件或修改提醒状态（Dry run）
         type: boolean
@@ -44,7 +48,7 @@ concurrency:
 
 jobs:
   daily:
-    if: github.ref == 'refs/heads/main' && github.event.repository.private == true
+    if: github.ref == 'refs/heads/main' && github.event.repository.private == true && (github.event_name != 'schedule' || vars.STOCKWATCH_SCHEDULER != 'cron-job.org')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -78,7 +82,7 @@ jobs:
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           REPORT_EMAIL: ${{ secrets.REPORT_EMAIL }}
-          SCHEDULED: ${{ github.event_name == 'schedule' }}
+          SCHEDULED: ${{ github.event_name == 'schedule' || inputs.scheduled }}
           DRY_RUN: ${{ inputs.dry_run }}
           REBUILD_PERFORMANCE: ${{ inputs.rebuild_performance }}
           HSBC_LOOKBACK_DAYS: ${{ inputs.hsbc_lookback_days || '3' }}

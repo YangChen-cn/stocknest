@@ -8,10 +8,10 @@ from zoneinfo import ZoneInfo
 
 # Separate cron expressions identify the intended slot even when GitHub is late.
 UTC_SCHEDULES = {
-    "30 14 * * 1-5": ("INTRADAY", -4),
-    "30 15 * * 1-5": ("INTRADAY", -5),
-    "0 23 * * 1-5": ("CLOSE", -4),
-    "0 0 * * 2-6": ("CLOSE", -5),
+    "23 14 * * 1-5": ("INTRADAY", -4),
+    "23 15 * * 1-5": ("INTRADAY", -5),
+    "53 22 * * 1-5": ("CLOSE", -4),
+    "53 23 * * 1-5": ("CLOSE", -5),
 }
 
 

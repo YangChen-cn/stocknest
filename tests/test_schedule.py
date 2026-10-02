@@ -22,11 +22,11 @@ def test_season_selects_only_two_report_modes(date, offset):
 
 
 @pytest.mark.parametrize("cron,timestamp,mode", [
-    ("30 14 * * 1-5", "2026-10-01T19:42:00+00:00", "INTRADAY"),
-    ("0 23 * * 1-5", "2026-10-02T01:53:00+00:00", "CLOSE"),
-    ("0 0 * * 2-6", "2026-11-07T00:00:00+00:00", "CLOSE"),
+    ("23 14 * * 1-5", "2026-10-01T19:42:00+00:00", "INTRADAY"),
+    ("53 22 * * 1-5", "2026-10-02T01:53:00+00:00", "CLOSE"),
+    ("53 23 * * 1-5", "2026-11-07T00:00:00+00:00", "CLOSE"),
 ])
-def test_delays_and_winter_friday_close(cron, timestamp, mode):
+def test_delays_and_winter_close(cron, timestamp, mode):
     assert scheduled_mode(cron, datetime.fromisoformat(timestamp)) == mode
 
 
@@ -37,14 +37,14 @@ def test_cron_hours_map_to_new_york_report_times():
         day = "2026-10-01" if offset == -4 else "2026-11-03"
         utc = datetime.fromisoformat(f"{day}T00:00:00+00:00") + timedelta(hours=int(hour), minutes=int(minute))
         ny = utc.astimezone(ZoneInfo("America/New_York"))
-        assert (ny.hour, ny.minute) == ((10, 30) if mode == "INTRADAY" else (19, 0))
+        assert (ny.hour, ny.minute) == ((10, 23) if mode == "INTRADAY" else (18, 53))
         assert ny.weekday() < 5
 
 
 @pytest.mark.parametrize("cron,manual,expected", [
     ("", "INTRADAY", "INTRADAY"), ("", "CLOSE", "CLOSE"),
-    ("30 14 * * 1-5", "CLOSE", "INTRADAY"),
-    ("30 15 * * 1-5", "INTRADAY", ""),
+    ("23 14 * * 1-5", "CLOSE", "INTRADAY"),
+    ("23 15 * * 1-5", "INTRADAY", ""),
 ])
 def test_preflight_output(tmp_path, monkeypatch, cron, manual, expected):
     import stockwatch.schedule as schedule
@@ -63,4 +63,4 @@ def test_invalid_schedule_fails_closed():
     with pytest.raises(KeyError):
         scheduled_mode("0 19 * * 1-5", datetime.fromisoformat("2026-10-01T23:00:00+00:00"))
     with pytest.raises(ValueError):
-        scheduled_mode("0 23 * * 1-5", datetime(2026, 10, 1))
+        scheduled_mode("53 22 * * 1-5", datetime(2026, 10, 1))

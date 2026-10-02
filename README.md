@@ -188,7 +188,7 @@ The UI sync button also checks GitHub repository privacy before committing. It c
 
 ### Workflow Configuration
 1. **Repository Secrets**: Add `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`, and `REPORT_EMAIL`.
-2. **Schedules**: Default **UTC** cron preserves New York **10:30** (Intraday) and **19:00** (Close). Intraday candidates are 14:30 / 15:30 UTC Mon–Fri; Close candidates are 23:00 UTC Mon–Fri / 00:00 UTC Tue–Sat (the preceding New York day). Dependency-free preflight chooses EDT/EST before installing runtime packages; inactive slots send nothing and change no state. Logs show UTC/New York execution times and source cron. Delayed valid runs still pass through NYSE session checks and email deduplication. Holidays, weekends and early closes remain calendar-gated. GitHub can delay or drop schedules; UTC does not guarantee punctual delivery ([GitHub documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)).
+2. **Schedules**: Default **UTC** cron preserves New York **10:23** (Intraday) and **18:53** (Close). Intraday candidates are 14:23 / 15:23 UTC Mon–Fri; Close candidates are 22:53 / 23:53 UTC Mon–Fri. Dependency-free preflight chooses EDT/EST before installing runtime packages; inactive slots send nothing and change no state. Logs show UTC/New York execution times and source cron. Delayed valid runs still pass through NYSE session checks and email deduplication. Holidays, weekends and early closes remain calendar-gated. GitHub can delay or drop schedules; UTC does not guarantee punctual delivery ([GitHub documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)).
 3. **State Persistence**: In a private copy only, the bot commits `state.json`, `performance.json`, and (when HSBC imports exist) `transactions.csv` / `hsbc_imports.json` with `[skip ci]`.
 4. **Crash Recovery**: 3-day private artifacts contain logs and recovery files. If sending succeeds but pushing fails, restore the affected artifact files before rerunning.
 
@@ -280,3 +280,18 @@ python tools/check_public_release.py
 ## 📄 License
 
 This project is licensed under the **[GNU AGPL-3.0-only](LICENSE)**. Dependencies retain their respective licenses.
+
+
+## External scheduling with cron-job.org
+
+Use two weekday jobs in `America/New_York`: **10:23 INTRADAY** and **18:53 CLOSE** (Hong Kong EDT: 22:23 / next day 06:53; EST: 23:23 / next day 07:53). DST is handled by cron-job.org. Python still checks NYSE sessions, holidays and early closes; email deduplication and recovery remain unchanged.
+
+Create both jobs disabled first. POST to `https://api.github.com/repos/OWNER/PRIVATE_REPO/actions/workflows/daily.yml/dispatches`. Headers: `Accept: application/vnd.github+json`, `Content-Type: application/json`, `Authorization: Bearer YOUR_FINE_GRAINED_TOKEN`, `X-GitHub-Api-Version: 2022-11-28`. Use a dedicated expiring fine-grained token restricted to the private repository with **Actions: write**; enter it directly in cron-job.org, never in project files or chat. Gmail Secrets remain on GitHub. Keep response storage off.
+
+Body for Intraday (replace mode with `CLOSE` for the second job):
+
+```json
+{"ref":"main","inputs":{"mode":"INTRADAY","scheduled":true}}
+```
+
+For a no-email test, temporarily add `"dry_run":true`, run the cron-job.org test, and inspect the matching Actions run. HTTP success only confirms dispatch; it does not mean the report completed. Outside an active session, Intraday skips, and scheduled Close skips when New York has no completed session that day. Restore normal payload after testing and enable both jobs. Then set the private repository Actions variable `STOCKWATCH_SCHEDULER=cron-job.org`; this skips native scheduled jobs before allocating a runner. Manual/externally dispatched runs stay enabled. Remove that variable to restore native UTC scheduling. Disabling the workflow itself also blocks external dispatch. Check cron-job.org history and Actions separately; expired/revoked tokens require renewal. External dispatch still uses private Actions minutes and may face runner queues.
