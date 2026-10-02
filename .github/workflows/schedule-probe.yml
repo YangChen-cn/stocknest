@@ -1,0 +1,24 @@
+name: StockWatch Schedule Probe
+
+on:
+  schedule:
+    - cron: '39 3 2 10 *'
+
+permissions:
+  contents: read
+
+jobs:
+  timing:
+    if: github.event.repository.private == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Record scheduled and actual times
+        env:
+          EXPECTED_UTC: '2026-10-02T03:39:00+00:00'
+          SOURCE_CRON: ${{ github.event.schedule }}
+        run: |
+          echo "Expected UTC: $EXPECTED_UTC"
+          echo "Source cron: $SOURCE_CRON"
+          date -u '+Runner UTC: %Y-%m-%dT%H:%M:%SZ'
+          echo "No data requests, secrets, state changes or emails."
