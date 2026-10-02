@@ -186,6 +186,8 @@ git push origin main
 
 The UI sync button also checks GitHub repository privacy before committing. It commits only config/transactions/import audit (never local Gmail), pulls remote history/state, and preserves conflicts.
 
+GitHub Actions schedules may be delayed or skipped; you can use free [cron-job.org](https://cron-job.org/en/) to [trigger the workflow externally](#external-scheduling-with-cron-joborg).
+
 ### Workflow Configuration
 1. **Repository Secrets**: Add `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`, and `REPORT_EMAIL`.
 2. **Schedules**: Default **UTC** cron preserves New York **10:23** (Intraday) and **18:53** (Close). Intraday candidates are 14:23 / 15:23 UTC Mon–Fri; Close candidates are 22:53 / 23:53 UTC Mon–Fri. Dependency-free preflight chooses EDT/EST before installing runtime packages; inactive slots send nothing and change no state. Logs show UTC/New York execution times and source cron. Delayed valid runs still pass through NYSE session checks and email deduplication. Holidays, weekends and early closes remain calendar-gated. GitHub can delay or drop schedules; UTC does not guarantee punctual delivery ([GitHub documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)).
