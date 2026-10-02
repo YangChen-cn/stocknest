@@ -85,7 +85,7 @@
 ## Actions 与本机控制
 
 - CI 与日报分开：CI 检查测试、依赖和精简 runtime；日报不在每次发送前跑完整测试。
-- 保留纽约时区 10:30 / 19:00 两次工作日调度、NYSE 假日 / 提前收盘校验、默认分支限制和串行 concurrency。
+- Actions 使用默认 UTC 调度：盘中14:30 EDT／15:30 EST（周一至周五），收盘23:00 EDT（周一至周五）／00:00 EST（周二至周六，对应纽约前一天）。标准库预检查按纽约时区选择当季时段，在安装依赖前跳过另一组；不能按实际启动小时拒绝正常延迟的任务。仍保留美东10:30／19:00两次报告、NYSE 假日／提前收盘校验、默认分支限制、邮件去重和串行 concurrency。改用 UTC 不保证准时送达。
 - 公开版日报 job 必须受仓库私有条件保护。私人版 Actions 只自动提交 `data/state.json`、`data/performance.json`，以及已启用汇丰导入时的 `data/transactions.csv`、`data/hsbc_imports.json`，使用既有 `[skip ci]` 信息，保留恢复 artifact 和推送冲突失败逻辑。
 - 不提交报告、行情、cache 或构建文件；不强推、不引入 push 触发日报循环。SMTP 与 Git 不是原子事务，发送后推送失败必须明确报错并保留恢复文件。
 - macOS 复用每用户 launchd，只在登录后启动本地 Dashboard，不替代云端邮件。开启登录自启仅保存下次登录配置，不 bootstrap / kickstart 当前页面；页面不提供启动服务按钮，终端启动才检查端口。保持 localhost 绑定，检查端口占用，不自动覆盖其他工作区服务。

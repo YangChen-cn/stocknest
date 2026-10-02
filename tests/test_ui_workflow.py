@@ -199,15 +199,20 @@ def test_workflow_permissions_schedule_and_file_whitelist():
     workflow = yaml.load((ROOT / ".github/workflows/daily.yml").read_text(), Loader=yaml.BaseLoader)
     assert workflow["permissions"] == {"contents": "write"}
     assert workflow["on"]["schedule"] == [
-        {"cron": "30 10 * * 1-5", "timezone": "America/New_York"},
-        {"cron": "0 19 * * 1-5", "timezone": "America/New_York"}]
+        {"cron": "30 14 * * 1-5"}, {"cron": "30 15 * * 1-5"},
+        {"cron": "0 23 * * 1-5"}, {"cron": "0 0 * * 2-6"}]
     assert set(workflow["on"]) == {"schedule", "workflow_dispatch"}
     assert workflow["concurrency"]["cancel-in-progress"] == "false"
     steps = workflow["jobs"]["daily"]["steps"]
     assert all("pytest" not in step.get("run", "") and "pip check" not in step.get("run", "") for step in steps)
     assert workflow["on"]["workflow_dispatch"]["inputs"]["mode"]["options"] == ["CLOSE", "INTRADAY"]
     command = next(step for step in steps if step.get("id") == "report")
-    assert "github.event.schedule" in command["env"]["REPORT_MODE"] and '--mode "$REPORT_MODE"' in command["run"]
+    assert "steps.schedule.outputs.mode" in command["env"]["REPORT_MODE"] and '--mode "$REPORT_MODE"' in command["run"]
+    selector = next(step for step in steps if step.get("id") == "schedule")
+    assert "github.event.schedule" in selector["env"]["SCHEDULE_CRON"]
+    assert steps.index(selector) < next(i for i, step in enumerate(steps) if step["name"] == "Set up Python")
+    for name in ("Set up Python", "Install locked dependencies", "Generate and deliver daily report"):
+        assert next(step for step in steps if step["name"] == name)["if"] == "steps.schedule.outputs.should_run == 'true'"
     persistence = next(step["run"] for step in steps if step["name"] == "Validate and persist notification state")
     assert "git add -f -- data/state.json" in persistence and "git add ." not in persistence
     assert "chore: update StockWatch state [skip ci]" in persistence

@@ -188,7 +188,7 @@ The UI sync button also checks GitHub repository privacy before committing. It c
 
 ### Workflow Configuration
 1. **Repository Secrets**: Add `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`, and `REPORT_EMAIL`.
-2. **Schedules**: America/New_York at **10:30** (Intraday) and **19:00** (Close) weekdays; NYSE calendar gates holidays, weekends, early closes and incomplete sessions.
+2. **Schedules**: Default **UTC** cron preserves New York **10:30** (Intraday) and **19:00** (Close). Intraday candidates are 14:30 / 15:30 UTC Mon–Fri; Close candidates are 23:00 UTC Mon–Fri / 00:00 UTC Tue–Sat (the preceding New York day). Dependency-free preflight chooses EDT/EST before installing runtime packages; inactive slots send nothing and change no state. Logs show UTC/New York execution times and source cron. Delayed valid runs still pass through NYSE session checks and email deduplication. Holidays, weekends and early closes remain calendar-gated. GitHub can delay or drop schedules; UTC does not guarantee punctual delivery ([GitHub documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)).
 3. **State Persistence**: In a private copy only, the bot commits `state.json`, `performance.json`, and (when HSBC imports exist) `transactions.csv` / `hsbc_imports.json` with `[skip ci]`.
 4. **Crash Recovery**: 3-day private artifacts contain logs and recovery files. If sending succeeds but pushing fails, restore the affected artifact files before rerunning.
 
