@@ -31,3 +31,7 @@ credentials*.json
 
 # Optional local Gmail profile; never synchronize credentials.
 /.stockwatch/
+
+# Local agent/maintainer instructions; keep on disk, never synchronize.
+AGENTS.md
+agents.md

@@ -320,3 +320,7 @@ python -m stockwatch.daily --mode MONTHLY --demo --dry-run
 ```
 
 The local Dashboard hides Streamlit’s developer/deployment menu using the supported `client.toolbarMode="minimal"` setting; it does not deploy or publish your portfolio.
+
+Maintenance notes in `AGENTS.md` / `agents.md` are local-only and excluded from Git. Shared setup and usage documentation remains in this README and the Chinese usage guide.
+
+If an updated Dashboard still displays old controls, its background Python process may retain imported modules. Stop the managed service (`python -m stockwatch.control stop`), wait for it to exit, start it (`python -m stockwatch.control start`), then reload the browser.
