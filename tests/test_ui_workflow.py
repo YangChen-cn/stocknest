@@ -393,9 +393,20 @@ def test_report_settings_save_and_demo_read_only(app):
     next(button for button in app_test.button if button.label == "Save report schedules").click().run()
     assert not app_test.exception
     config = load_config(root / "config.yaml")
-    assert config["reports"]["WEEKLY"]["enabled"] and config["reports"]["WEEKLY"]["days"] == [4]
+    assert config["reports"]["WEEKLY"]["enabled"] and config["reports"]["WEEKLY"]["time"] == "10:52"
+    assert "days" not in config["reports"]["WEEKLY"]
+    assert not any(widget.key in ("report_WEEKLY_days", "report_MONTHLY_days") for widget in app_test.selectbox)
+    assert [widget.key for widget in app_test.multiselect if widget.key.startswith("report_")] == ["report_INTRADAY_days", "report_CLOSE_days"]
     app_test.sidebar.radio[0].set_value("Settings").run()
     assert not app_test.exception
     app_test.sidebar.toggle[0].set_value(True).run()
     assert not app_test.exception
     assert next(button for button in app_test.button if button.label == "Save report schedules").disabled
+
+
+def test_dashboard_hides_streamlit_developer_toolbar(app):
+    import streamlit as st
+    app_test, _ = app
+    app_test.run()
+    assert not app_test.exception
+    assert st.get_option("client.toolbarMode") == "minimal"

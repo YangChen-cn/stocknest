@@ -32,7 +32,7 @@ def run(*, config_path: Path, transactions_path: Path, state_path: Path, output_
         now: datetime | None = None, performance_path: Path | None = None,
         rebuild_performance: bool = False, close_attempts: int = 3, close_retry_seconds: float = 120,
         sleeper: Callable = time.sleep, importer: Callable = sync_hsbc,
-        import_state_path: Path | None = None) -> int:
+        import_state_path: Path | None = None, delivery_day: date | None = None) -> int:
     session_key = report_session_key(mode) if mode in ("CLOSE", "INTRADAY") else f"last_{mode.lower()}_session"
     now = now or datetime.now(timezone.utc)
     config = load_config(config_path)
@@ -66,7 +66,7 @@ def run(*, config_path: Path, transactions_path: Path, state_path: Path, output_
         return run_summary(mode=mode, config=config, session=session, now=now, provider=provider,
                            transactions_path=transactions_path, state_path=state_path, output_dir=output_dir,
                            performance_path=performance_path or state_path.parent / "performance.json",
-                           dry_run=dry_run, demo=demo, force_send=force_send, sender=sender)
+                           dry_run=dry_run, demo=demo, force_send=force_send, sender=sender, delivery_day=delivery_day)
     transactions = load_transactions(transactions_path)
     attempts = close_attempts if mode == "CLOSE" and not (dry_run or demo or sent_before and not force_send) and mail_enabled and settings else 1
     if state.get("_meta", {}).get("last_close_error_session") == session.isoformat() and not force_send:
@@ -224,15 +224,17 @@ def main(argv: list[str] | None = None) -> int:
         now = datetime.now(timezone.utc)
         if args.demo:
             now = datetime.combine(provider.session, datetime.min.time(), NY).replace(hour=10 if args.mode == "INTRADAY" else 18, minute=30)
-        session = provider.session if args.demo else (active_session(now) if args.mode == "INTRADAY" else latest_session(now, scheduled=args.scheduled))
+        session = provider.session if args.demo else (active_session(now) if args.mode == "INTRADAY" else latest_session(now, scheduled=args.scheduled and args.mode not in ("WEEKLY", "MONTHLY")))
         if session is None:
             logger.info(t("No active NYSE session; intraday run skipped" if args.mode == "INTRADAY" else "No completed New York session today; scheduled run skipped", lang))
             return 0
         logger.info(t("Starting {session} report with {source}", lang, session=session, source=t("offline demo", lang) if args.demo else "OpenBB / yfinance"))
+        from stockwatch.report_settings import report_timezone
         return run(config_path=config_path,
                    transactions_path=ROOT / "examples/transactions.csv" if args.demo else args.transactions,
                    state_path=args.state, output_dir=args.output_dir, provider=provider, session=session,
                    dry_run=args.dry_run, force_send=args.force_send, demo=args.demo, mode=args.mode, now=now, performance_path=args.performance,
+                   delivery_day=(provider.session if args.demo else now.astimezone(report_timezone(args.mode)).date()) if args.mode in ("WEEKLY", "MONTHLY") else None,
                    rebuild_performance=args.rebuild_performance, close_attempts=args.close_attempts,
                    close_retry_seconds=args.close_retry_seconds, import_state_path=args.import_state,
                    **({"importer": lambda *a, **kw: {"disabled": True}} if args.skip_hsbc else {}))

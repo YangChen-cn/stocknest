@@ -593,6 +593,7 @@ def ai_export(config, transactions, portfolio, quotes, as_of, demo, watchlist_ro
 
 
 def main(app_name: str = "StockWatch"):
+    st.set_option("client.toolbarMode", "minimal")
     st.set_page_config(page_title=app_name, page_icon="📈", layout="wide")
     try:
         ensure_user_files(ROOT)

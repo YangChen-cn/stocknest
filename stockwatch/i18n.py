@@ -4,6 +4,12 @@ import re
 LANGUAGES = {"zh-CN": "简体中文", "en": "English"}
 
 ZH = {
+    "Daily times use New York time with automatic DST; weekly/monthly times use Hong Kong time.": "盘中、收盘按美东时间（自动适配夏令时）；周报、月报按香港时间。",
+    "Time (Hong Kong)": "发送时间（香港）",
+    "Every Saturday · Hong Kong time": "每周六发送（香港时间）",
+    "First weekend day of each month · previous month": "每月第一个周末日，汇总上月",
+    "Weekend summaries use completed closes: weekly through the last session of the week, monthly through the last session of the previous month. Default 10:52 Hong Kong time.": "周末汇总只用已完成的收盘数据：周报截至本周最后一个交易日，月报截至上月最后一个交易日。默认香港时间10:52。",
+
     "pp": "百分点",
     "If established during this period, returns begin with the first contribution. Summary runs do not trigger alerts.": "若在期间内开始建仓，收益从首次投入开始计算。汇总报告不触发或消费提醒。",
     "Excess return (pp)": "超额收益（百分点）",

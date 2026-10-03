@@ -33,10 +33,9 @@ def configured_slot(config, mode, now, state):
 
     NYSE holidays are still checked by daily with the full calendar.
     """
-    from stockwatch.report_settings import report_settings
-    local = now.astimezone(ZoneInfo("America/New_York"))
-    plan = report_settings(config.get("reports"))[mode]
-    if not plan["enabled"] or local.weekday() not in plan["days"] or local.strftime("%H:%M") < plan["time"]:
+    from stockwatch.report_settings import report_timezone, scheduled_due
+    local = now.astimezone(report_timezone(mode))
+    if not scheduled_due(config, mode, now):
         return False
     if mode == "MONTHLY":
         key = "last_monthly_period"

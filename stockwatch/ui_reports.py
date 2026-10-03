@@ -6,7 +6,7 @@ import streamlit as st
 from stockwatch.control import ControlError, apply_report_schedules
 from stockwatch.git_sync import SyncError, sync
 from stockwatch.i18n import error_message, t
-from stockwatch.report_settings import MODES, report_settings
+from stockwatch.report_settings import MODES, PERIODIC, report_settings
 from stockwatch.storage import ValidationError, load_config, save_config
 
 LABELS = {"INTRADAY": "Intraday brief", "CLOSE": "Closing report", "WEEKLY": "Weekly report", "MONTHLY": "Monthly report"}
@@ -18,7 +18,7 @@ def report_controls(path, config, demo, root):
     def tr(message):
         return t(message, lang)
     with st.expander(tr("Report schedules"), expanded=False):
-        st.caption(tr("All times are New York time (automatic DST). Daily reports skip holidays. Weekly is week-to-date; monthly covers the previous calendar month."))
+        st.caption(tr("Daily times use New York time with automatic DST; weekly/monthly times use Hong Kong time."))
         settings = report_settings(config.get('reports'))
         signature = (str(settings), demo)
         if st.session_state.get('_report_settings_signature') != signature:
@@ -33,13 +33,13 @@ def report_controls(path, config, demo, root):
                 cols = st.columns([2, 2, 3])
                 enabled = cols[0].checkbox(tr(LABELS[mode]), value=item['enabled'], key=f'report_{mode}_enabled')
                 hour, minute = map(int, item['time'].split(':'))
-                clock = cols[1].time_input(tr('Time (New York)'), value=time(hour, minute), step=60, key=f'report_{mode}_time')
-                if mode == 'WEEKLY':
-                    days = [cols[2].selectbox(tr('Weekday'), list(range(5)), index=item['days'][0], format_func=lambda day: tr(DAYS[day]), key=f'report_{mode}_days')]
+                clock = cols[1].time_input(tr('Time (Hong Kong)' if mode in PERIODIC else 'Time (New York)'), value=time(hour, minute), step=60, key=f'report_{mode}_time')
+                updated[mode] = {'enabled': enabled, 'time': clock.strftime('%H:%M')}
+                if mode in PERIODIC:
+                    cols[2].caption(tr('Every Saturday · Hong Kong time' if mode == 'WEEKLY' else 'First weekend day of each month · previous month'))
                 else:
-                    days = cols[2].multiselect(tr('Weekdays'), list(range(5)), default=item['days'], format_func=lambda day: tr(DAYS[day]), key=f'report_{mode}_days')
-                updated[mode] = {'enabled': enabled, 'time': clock.strftime('%H:%M'), 'days': days}
-            st.caption(tr("Monthly sends on the first NYSE session matching your weekdays in the new month. Weekly holidays are skipped. Manual runs can generate missed summaries."))
+                    updated[mode]['days'] = cols[2].multiselect(tr('Weekdays'), list(range(5)), default=item['days'], format_func=lambda day: tr(DAYS[day]), key=f'report_{mode}_days')
+            st.caption(tr("Weekend summaries use completed closes: weekly through the last session of the week, monthly through the last session of the previous month. Default 10:52 Hong Kong time."))
             saved = st.form_submit_button(tr('Save report schedules'), disabled=demo)
         if saved:
             try:

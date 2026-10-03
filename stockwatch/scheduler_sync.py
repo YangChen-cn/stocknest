@@ -12,7 +12,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from stockwatch.report_settings import report_settings
+from stockwatch.report_settings import PERIODIC, report_settings, report_timezone
 
 
 class SchedulerError(RuntimeError):
@@ -74,9 +74,9 @@ def apply(config, repository, request=api, sleeper=time.sleep):
         hour, minute = map(int, plan['time'].split(':'))
         delta = {'enabled': plan['enabled'], 'saveResponses': False,
                  'title': f'StockWatch {mode} · {repository}',
-                 'schedule': {'timezone': 'America/New_York', 'expiresAt': 0, 'hours': [hour], 'minutes': [minute],
-                              'wdays': [day + 1 for day in plan['days']], 'months': [-1],
-                              'mdays': list(range(1, 15)) if mode == 'MONTHLY' else [-1]},
+                 'schedule': {'timezone': str(report_timezone(mode)), 'expiresAt': 0, 'hours': [hour], 'minutes': [minute],
+                              'wdays': ([0, 6] if mode == 'MONTHLY' else [6]) if mode in PERIODIC else [day + 1 for day in plan['days']], 'months': [-1],
+                              'mdays': list(range(1, 8)) if mode == 'MONTHLY' else [-1]},
                  'extendedData': {'headers': deepcopy(template['extendedData']['headers']),
                                   'body': json.dumps({'ref': 'main', 'inputs': {'mode': mode, 'scheduled': True}})}}
         if mode in jobs:

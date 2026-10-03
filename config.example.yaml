@@ -12,10 +12,11 @@ imports:
     allow_email_date: true    # use email date in New York if trade date is absent
     lookback_days: 3
 
-# New York time, automatic DST; weekdays: 0=Monday ... 4=Friday.
+# Daily: New York time; weekdays 0=Monday ... 4=Friday.
+# Weekly/monthly: Hong Kong time, weekly Saturdays / first monthly weekend day; no weekday selection.
 # Changing cloud trigger times requires applying schedules with cron-job.org.
 reports:
   INTRADAY: {enabled: true, time: "10:23", days: [0, 1, 2, 3, 4]}
   CLOSE: {enabled: true, time: "18:53", days: [0, 1, 2, 3, 4]}
-  WEEKLY: {enabled: false, time: "18:53", days: [4]}
-  MONTHLY: {enabled: false, time: "18:53", days: [0, 1, 2, 3, 4]}
+  WEEKLY: {enabled: false, time: "10:52"}
+  MONTHLY: {enabled: false, time: "10:52"}

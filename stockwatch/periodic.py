@@ -84,8 +84,12 @@ def render_summary(mode, session, portfolio, quotes, config, history, now, demo=
 
 
 def run_summary(*, mode, config, session, now, provider, transactions_path, state_path, output_dir,
-                performance_path, dry_run=False, demo=False, force_send=False, sender=send_report):
-    _, end, key = summary_period(mode, session)
+                performance_path, dry_run=False, demo=False, force_send=False, sender=send_report, delivery_day=None):
+    reference = delivery_day or session
+    _, end, key = summary_period(mode, reference)
+    if end > session:
+        logger.warning("%s target close is not completed; summary withheld", mode)
+        return 1
     state = load_state(state_path)
     state_key = f"last_{mode.lower()}_period"
     if state.get('_meta', {}).get(state_key) == key and not force_send and not (dry_run or demo):
@@ -95,13 +99,13 @@ def run_summary(*, mode, config, session, now, provider, transactions_path, stat
     history = update_history(performance_path, transactions, provider, end,
                              config['portfolio'].get('benchmark', DEFAULT_BENCHMARK), persist=False)
     portfolio, quotes = snapshot(config, transactions, provider, end, closing=True, now=now)
-    report = render_summary(mode, session, portfolio, quotes, config, history, now, demo)
+    report = render_summary(mode, reference, portfolio, quotes, config, history, now, demo)
     atomic_write(output_dir / f"{mode.lower()}-{key}.txt", report.text)
     atomic_write(output_dir / f"{mode.lower()}-{key}.html", report.html)
     if dry_run or demo:
         return 0
     # Never label an incomplete period or closing snapshot as a complete summary.
-    metrics = period_metrics(history, *summary_period(mode, session)[:2])
+    metrics = period_metrics(history, *summary_period(mode, reference)[:2])
     held = {row['symbol'] for row in portfolio['holdings']}
     invalid_prices = any(quotes[symbol].error or quotes[symbol].price is None or quotes[symbol].session != end for symbol in held)
     if invalid_prices or portfolio['market_value'] is None or any(tx.date <= end for tx in transactions) and metrics['portfolio_return_pct'] is None:

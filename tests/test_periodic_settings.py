@@ -18,7 +18,7 @@ def test_defaults_backward_compatible_and_schedule_validation():
     assert 'reports' not in validate_config({'watchlist': {}})
     assert report_settings()['CLOSE']['enabled'] and not report_settings()['WEEKLY']['enabled']
     for bad in ({'CLOSE': {'time': '25:00'}}, {'INTRADAY': {'time': '18:00'}},
-                {'WEEKLY': {'days': [0, 4]}}, {'CLOSE': {'days': []}},
+                {'CLOSE': {'days': []}},
                 {'MONTHLY': {'enabled': 'false'}}, {'CLOSE': {'days': [True]}},
                 {'CLOSE': {'days': [0, 0]}}, {'CLOSE': {'time': '09:30'}}):
         with pytest.raises(ValueError):
@@ -31,11 +31,15 @@ def test_due_settings_weekends_dst_monthly_holiday():
     assert scheduled_due(config, 'CLOSE', datetime.fromisoformat('2026-10-02T23:20:00+00:00'))
     assert scheduled_due(config, 'CLOSE', datetime.fromisoformat('2026-11-03T23:54:00+00:00'))
     assert not scheduled_due(config, 'CLOSE', datetime.fromisoformat('2026-10-03T23:00:00+00:00'))
-    # January 1 holiday and weekend are not the first matching NYSE session.
-    assert not scheduled_due(config, 'MONTHLY', datetime.fromisoformat('2027-01-01T23:54:00+00:00'))
-    assert scheduled_due(config, 'MONTHLY', datetime.fromisoformat('2027-01-04T23:54:00+00:00'))
-    assert not scheduled_due(config, 'MONTHLY', datetime.fromisoformat('2027-01-05T23:54:00+00:00'))
-    assert scheduled_due(config, 'WEEKLY', datetime.fromisoformat('2026-10-02T23:00:00+00:00'))
+    # Hong Kong Saturday 10:52 remains Friday in New York, in both seasons.
+    assert not scheduled_due(config, 'MONTHLY', datetime.fromisoformat('2027-01-02T02:51:00+00:00'))
+    assert scheduled_due(config, 'MONTHLY', datetime.fromisoformat('2027-01-02T02:52:00+00:00'))
+    assert not scheduled_due(config, 'MONTHLY', datetime.fromisoformat('2027-01-09T02:52:00+00:00'))
+    assert scheduled_due(config, 'WEEKLY', datetime.fromisoformat('2026-10-03T02:52:00+00:00'))
+    assert scheduled_due(config, 'WEEKLY', datetime.fromisoformat('2026-11-07T02:52:00+00:00'))
+    assert not scheduled_due(config, 'WEEKLY', datetime.fromisoformat('2026-10-04T02:52:00+00:00'))
+    assert scheduled_due(config, 'MONTHLY', datetime.fromisoformat('2026-11-01T02:52:00+00:00'))
+    assert not scheduled_due(config, 'MONTHLY', datetime.fromisoformat('2026-11-07T02:52:00+00:00'))
     assert not scheduled_due({'reports': {'CLOSE': {'enabled': False}}}, 'CLOSE', datetime.fromisoformat('2026-10-02T23:00:00+00:00'))
 
 
@@ -111,8 +115,11 @@ def test_external_api_preserves_dispatch_credentials_and_job_scope(capsys):
     mutations = [p['job'] for method, _, p in calls if method in ('PATCH', 'PUT')]
     assert len(mutations) == 4
     assert all(job['extendedData']['headers'] == template['extendedData']['headers'] for job in mutations)
-    assert all(job['schedule']['timezone'] == 'America/New_York' for job in mutations)
-    assert mutations[1]['enabled'] is False and mutations[2]['schedule']['wdays'] == [5]
+    assert [job['schedule']['timezone'] for job in mutations] == ['America/New_York', 'America/New_York', 'Asia/Hong_Kong', 'Asia/Hong_Kong']
+    assert mutations[1]['enabled'] is False and mutations[2]['schedule']['wdays'] == [6]
+    assert mutations[2]['schedule']['hours'] == [10] and mutations[2]['schedule']['minutes'] == [52]
+    assert mutations[3]['schedule']['wdays'] == [0, 6]
+    assert mutations[3]['schedule']['mdays'] == list(range(1, 8))
     assert all('99' not in path for _, path, _ in calls)
     assert 'fake-private-value' not in capsys.readouterr().out
     with pytest.raises(SchedulerError):
@@ -125,8 +132,11 @@ def test_cheap_preflight_skips_disabled_and_sent_without_calendar():
     assert configured_slot({}, 'CLOSE', now, {})
     assert not configured_slot({}, 'CLOSE', now, {'_meta': {'last_report_session': '2026-10-02'}})
     config = {'reports': {'MONTHLY': {'enabled': True}, 'WEEKLY': {'enabled': True}}}
-    assert not configured_slot(config, 'MONTHLY', now, {'_meta': {'last_monthly_period': '2026-09'}})
-    assert not configured_slot(config, 'WEEKLY', now, {'_meta': {'last_weekly_period': '2026-W40'}})
+    weekend = datetime.fromisoformat('2026-10-03T02:52:00+00:00')
+    assert configured_slot(config, 'MONTHLY', weekend, {})
+    assert not configured_slot(config, 'MONTHLY', weekend, {'_meta': {'last_monthly_period': '2026-09'}})
+    assert configured_slot(config, 'WEEKLY', weekend, {})
+    assert not configured_slot(config, 'WEEKLY', weekend, {'_meta': {'last_weekly_period': '2026-W40'}})
     assert not configured_slot({'reports': {'CLOSE': {'enabled': False}}}, 'CLOSE', now, {})
 
 
@@ -156,3 +166,36 @@ def test_scheduler_workflow_is_private_and_lightweight():
     assert 'github.event.repository.private == true' in workflow['jobs']['apply']['if']
     steps = workflow['jobs']['apply']['steps']
     assert not any('requirements-runtime' in step.get('run', '') or 'pytest' in step.get('run', '') for step in steps)
+
+
+def test_weekend_migration_and_cross_month_reference():
+    plans = report_settings({'WEEKLY': {'enabled': True, 'time': '18:53', 'days': [4]},
+                             'MONTHLY': {'enabled': False, 'time': '18:53', 'days': [0, 1, 2, 3, 4]}})
+    assert plans['WEEKLY'] == {'enabled': True, 'time': '10:52'}
+    assert plans['MONTHLY'] == {'enabled': False, 'time': '10:52'}
+    assert summary_period('MONTHLY', date(2026, 8, 1)) == (date(2026, 7, 1), date(2026, 7, 31), '2026-07')
+    # Good Friday: the weekly cutoff is Thursday, but week dedupe is unchanged.
+    assert summary_period('WEEKLY', date(2026, 4, 4)) == (date(2026, 3, 30), date(2026, 4, 2), '2026-W14')
+
+
+def test_weekend_scheduled_cli_uses_delivery_month_and_latest_close(portfolio_files, monkeypatch):
+    import stockwatch.daily as daily
+    from stockwatch.storage import load_config, save_config
+    config = load_config(portfolio_files['config_path'])
+    config['reports'] = {'MONTHLY': {'enabled': True}}
+    save_config(portfolio_files['config_path'], config)
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.fromisoformat('2026-08-01T02:52:00+00:00').astimezone(tz)
+    monkeypatch.setattr(daily, 'datetime', Clock)
+    monkeypatch.setattr(daily, 'OpenBBProvider', SummaryProvider)
+    result = daily.main(['--mode', 'MONTHLY', '--scheduled', '--dry-run', '--skip-hsbc',
+                         '--config', str(portfolio_files['config_path']), '--transactions', str(portfolio_files['transactions_path']),
+                         '--state', str(portfolio_files['state_path']), '--output-dir', str(portfolio_files['output_dir']),
+                         '--log-dir', str(portfolio_files['output_dir'] / 'logs')])
+    assert result == 0
+    report = (portfolio_files['output_dir'] / 'monthly-2026-07.txt').read_text()
+    assert '2026-07-31' in report and '2026-07-01' in report
+    assert not (portfolio_files['output_dir'] / 'monthly-2026-06.txt').exists()
+    assert load_state(portfolio_files['state_path']) == {}
