@@ -324,3 +324,7 @@ The local Dashboard hides Streamlit’s developer/deployment menu using the supp
 Maintenance notes in `AGENTS.md` / `agents.md` are local-only and excluded from Git. Shared setup and usage documentation remains in this README and the Chinese usage guide.
 
 If an updated Dashboard still displays old controls, its background Python process may retain imported modules. Stop the managed service (`python -m stockwatch.control stop`), wait for it to exit, start it (`python -m stockwatch.control start`), then reload the browser.
+
+## Release notes
+
+See [v1.0.0 release notes](docs/releases/v1.0.0.md) for changes since v0.1.0.
