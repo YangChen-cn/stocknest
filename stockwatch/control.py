@@ -87,7 +87,7 @@ def set_workflow_enabled(root: Path, enabled: bool):
 
 
 def trigger_workflow(root: Path, mode="CLOSE", *, dry_run=True, sync_only=False, lookback_days=None):
-    if mode not in ("CLOSE", "INTRADAY"):
+    if mode not in ("CLOSE", "INTRADAY", "WEEKLY", "MONTHLY"):
         raise ControlError("Invalid report mode.")
     if lookback_days is not None and (isinstance(lookback_days, bool) or not isinstance(lookback_days, int) or not 1 <= lookback_days <= 365):
         raise ControlError("HSBC lookback must be between 1 and 365 days.")
@@ -203,3 +203,8 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def apply_report_schedules(root: Path):
+    """Use existing gh credentials; management key stays in cloud Secrets."""
+    _command([gh_path(), "workflow", "run", "scheduler.yml", "--repo", repository(root), "--ref", "main"], root=root)

@@ -297,3 +297,24 @@ Body for Intraday (replace mode with `CLOSE` for the second job):
 ```
 
 For a no-email test, temporarily add `"dry_run":true`, run the cron-job.org test, and inspect the matching Actions run. HTTP success only confirms dispatch; it does not mean the report completed. Outside an active session, Intraday skips, and scheduled Close skips when New York has no completed session that day. Restore normal payload after testing and enable both jobs. Then set the private repository Actions variable `STOCKWATCH_SCHEDULER=cron-job.org`; this skips native scheduled jobs before allocating a runner. Manual/externally dispatched runs stay enabled. Remove that variable to restore native UTC scheduling. Disabling the workflow itself also blocks external dispatch. Check cron-job.org history and Actions separately; expired/revoked tokens require renewal. External dispatch still uses private Actions minutes and may face runner queues.
+
+## Optional weekly/monthly reports and adjustable schedules
+
+Open **Dashboard / Settings → Report schedules** to switch INTRADAY, CLOSE, WEEKLY and MONTHLY independently, choose New York time and Monday–Friday delivery days. DST is automatic. Weekly/monthly are off by default. Weekly uses one chosen weekday and summarizes the current week through that close; holidays skip delivery. Monthly summarizes the previous full calendar month on the first NYSE session matching your selected weekdays in the new month. Manual workflow runs can generate a missed summary; same period is deduplicated unless force-send is selected. The global email switch still controls every report.
+
+Weekly/monthly include cash-flow-adjusted holdings returns, benchmark price returns, period P/L, contributions/withdrawals, realized P/L, fees, current holdings and a JSON attachment. They exclude dividends/cash and never check or consume daily alert state. Missing required portfolio history/closing prices withholds the summary; benchmark-only failure does not block it. If your first purchase is inside the period, comparison begins at that portfolio's baseline. Summaries calculate without overwriting formal performance history.
+
+**Saving settings locally does not change cron-job.org trigger times.** For Dashboard control of cloud time:
+
+1. In cron-job.org **Settings → API keys**, create a management Key. Store it only in the private GitHub repository's Actions Secret **`CRONJOB_API_KEY`**, never in config or chat. This is separate from the dedicated GitHub Actions-write token already in your external job headers.
+2. Keep at least one authorized cron-job.org task pointing at your own repository's `daily.yml` dispatch endpoint, with `ref=main`, a valid report `mode` and `scheduled=true`.
+3. Save report settings, then click **Sync and apply cloud schedules**. Check **Actions → Apply report schedules** for success. This commits only the existing editable-file whitelist, then updates matching external jobs and creates enabled weekly/monthly jobs, preserving dispatch headers in memory.
+
+The [cron-job.org management API](https://docs.cron-job.org/rest-api.html) allows 100 requests/day by default; settings synchronization uses a small number of requests only when clicked. It is not a new background polling service. The scheduler workflow runs only in private repositories and installs only PyYAML. Daily dispatch preflight skips disabled/already-sent slots before installing OpenBB. Monthly external jobs check selected weekdays in the first 14 calendar days; the full NYSE check chooses one eligible day and the successful-period latch prevents repeats. If multiple job updates partially fail, inspect cron-job.org and rerun apply; changes are not atomic.
+
+Native GitHub cron remains a **fixed-time fallback** and does not acquire custom hours or weekly/monthly triggers from YAML. Custom cloud times and periodic automatic delivery require the external scheduler to be configured successfully. Cloud runner/market-data/SMTP delays remain possible.
+
+```sh
+python -m stockwatch.daily --mode WEEKLY --demo --dry-run
+python -m stockwatch.daily --mode MONTHLY --demo --dry-run
+```

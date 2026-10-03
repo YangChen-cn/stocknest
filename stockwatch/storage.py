@@ -136,8 +136,8 @@ def save_transactions(path: Path, rows: list[dict]) -> None:
 
 
 def validate_config(raw: Any) -> dict:
-    if not isinstance(raw, dict) or set(raw) - {"portfolio", "watchlist", "notifications", "imports"}:
-        raise ValidationError("Config supports portfolio, watchlist, notifications and imports only.")
+    if not isinstance(raw, dict) or set(raw) - {"portfolio", "watchlist", "notifications", "imports", "reports"}:
+        raise ValidationError("Config supports portfolio, watchlist, notifications, imports and reports only.")
     portfolio = raw.get("portfolio", {})
     if not isinstance(portfolio, dict) or set(portfolio) - {"base_currency", "language", "benchmark"} or portfolio.get("base_currency", "USD") != "USD":
         raise ValidationError("Only portfolio.base_currency: USD is supported.")
@@ -150,6 +150,12 @@ def validate_config(raw: Any) -> dict:
     clean = {"portfolio": {"base_currency": "USD", "language": lang}, "watchlist": {}}
     if "benchmark" in portfolio:
         clean["portfolio"]["benchmark"] = ticker(portfolio["benchmark"])
+    if "reports" in raw:
+        from stockwatch.report_settings import report_settings
+        try:
+            clean["reports"] = report_settings(raw["reports"])
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from None
     if "notifications" in raw:
         notifications = raw["notifications"]
         if not isinstance(notifications, dict) or set(notifications) - {"email_enabled"} or not isinstance(notifications.get("email_enabled", True), bool):
@@ -220,6 +226,9 @@ def validate_state(state: Any) -> dict:
                         date.fromisoformat(sent)
                     except (ValueError, TypeError):
                         raise ValidationError("Invalid report session in state.") from None
+            for key, pattern in (("last_weekly_period", r"\d{4}-W(?:0[1-9]|[1-4]\d|5[0-3])"), ("last_monthly_period", r"\d{4}-(?:0[1-9]|1[0-2])")):
+                if key in rules and (not isinstance(rules[key], str) or not re.fullmatch(pattern, rules[key])):
+                    raise ValidationError("Invalid report session in state.")
             continue
         ticker(symbol)
         for rule, item in rules.items():

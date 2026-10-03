@@ -12,7 +12,7 @@ on:
       mode:
         description: 报告模式（盘中模式在非交易时段自动跳过）
         type: choice
-        options: [CLOSE, INTRADAY]
+        options: [CLOSE, INTRADAY, WEEKLY, MONTHLY]
         default: CLOSE
       scheduled:
         description: 外部定时调用（校验纽约当天交易日；手动补发请关闭）
@@ -63,21 +63,37 @@ jobs:
           SCHEDULE_CRON: ${{ github.event_name == 'schedule' && github.event.schedule || '' }}
           MANUAL_MODE: ${{ inputs.mode || 'CLOSE' }}
         run: python3 -m stockwatch.schedule --cron "$SCHEDULE_CRON" --mode "$MANUAL_MODE" --github-output "$GITHUB_OUTPUT"
-      - name: Set up Python
+      - name: Check configured report slot before runtime installation
+        id: configured
         if: steps.schedule.outputs.should_run == 'true'
+        env:
+          REPORT_MODE: ${{ steps.schedule.outputs.mode }}
+          SCHEDULED: ${{ github.event_name == 'schedule' || inputs.scheduled }}
+          FORCE_SEND: ${{ inputs.force_send }}
+          SYNC_ONLY: ${{ inputs.sync_only }}
+        run: |
+          args=(--mode "$REPORT_MODE" --github-output "$GITHUB_OUTPUT")
+          if [ "$SCHEDULED" = "true" ] && [ "$FORCE_SEND" != "true" ] && [ "$SYNC_ONLY" != "true" ]; then
+            python3 -m pip install --quiet --target "$RUNNER_TEMP/stockwatch-config" PyYAML==6.0.3
+            export PYTHONPATH="$RUNNER_TEMP/stockwatch-config${PYTHONPATH:+:$PYTHONPATH}"
+            args+=(--scheduled)
+          fi
+          python3 -m stockwatch.schedule "${args[@]}"
+      - name: Set up Python
+        if: steps.configured.outputs.should_run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
           cache-dependency-path: requirements-runtime.lock
       - name: Install locked dependencies
-        if: steps.schedule.outputs.should_run == 'true'
+        if: steps.configured.outputs.should_run == 'true'
         run: |
           python -m pip install -r requirements-runtime.lock
           python -m pip install --no-deps -e .
       - name: Generate and deliver daily report
         id: report
-        if: steps.schedule.outputs.should_run == 'true'
+        if: steps.configured.outputs.should_run == 'true'
         env:
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
@@ -129,7 +145,7 @@ jobs:
             fi
           fi
       - name: Save logs and recovery state
-        if: always() && steps.schedule.outputs.should_run == 'true'
+        if: always() && steps.configured.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: stockwatch-run-${{ github.run_id }}-${{ github.run_attempt }}

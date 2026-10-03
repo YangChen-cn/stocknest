@@ -205,14 +205,14 @@ def test_workflow_permissions_schedule_and_file_whitelist():
     assert workflow["concurrency"]["cancel-in-progress"] == "false"
     steps = workflow["jobs"]["daily"]["steps"]
     assert all("pytest" not in step.get("run", "") and "pip check" not in step.get("run", "") for step in steps)
-    assert workflow["on"]["workflow_dispatch"]["inputs"]["mode"]["options"] == ["CLOSE", "INTRADAY"]
+    assert workflow["on"]["workflow_dispatch"]["inputs"]["mode"]["options"] == ["CLOSE", "INTRADAY", "WEEKLY", "MONTHLY"]
     command = next(step for step in steps if step.get("id") == "report")
     assert "steps.schedule.outputs.mode" in command["env"]["REPORT_MODE"] and '--mode "$REPORT_MODE"' in command["run"]
     selector = next(step for step in steps if step.get("id") == "schedule")
     assert "github.event.schedule" in selector["env"]["SCHEDULE_CRON"]
     assert steps.index(selector) < next(i for i, step in enumerate(steps) if step["name"] == "Set up Python")
     for name in ("Set up Python", "Install locked dependencies", "Generate and deliver daily report"):
-        assert next(step for step in steps if step["name"] == name)["if"] == "steps.schedule.outputs.should_run == 'true'"
+        assert next(step for step in steps if step["name"] == name)["if"] == "steps.configured.outputs.should_run == 'true'"
     assert "inputs.scheduled" in command["env"]["SCHEDULED"]
     assert workflow["on"]["workflow_dispatch"]["inputs"]["scheduled"]["default"] == "false"
     assert "vars.STOCKWATCH_SCHEDULER" in workflow["jobs"]["daily"]["if"]
@@ -384,3 +384,18 @@ def test_dashboard_and_watchlist_offer_ai_download(app):
     app_test.sidebar.radio[0].set_value("Watchlist & Alerts").run()
     assert not app_test.exception
     assert app_test.get("download_button")[0].proto.label == "Export current AI data (JSON)"
+
+
+def test_report_settings_save_and_demo_read_only(app):
+    app_test, root = app
+    app_test.run()
+    next(box for box in app_test.checkbox if box.key == "report_WEEKLY_enabled").set_value(True)
+    next(button for button in app_test.button if button.label == "Save report schedules").click().run()
+    assert not app_test.exception
+    config = load_config(root / "config.yaml")
+    assert config["reports"]["WEEKLY"]["enabled"] and config["reports"]["WEEKLY"]["days"] == [4]
+    app_test.sidebar.radio[0].set_value("Settings").run()
+    assert not app_test.exception
+    app_test.sidebar.toggle[0].set_value(True).run()
+    assert not app_test.exception
+    assert next(button for button in app_test.button if button.label == "Save report schedules").disabled

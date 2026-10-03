@@ -2,6 +2,7 @@
 
 import argparse
 from datetime import datetime, timedelta, timezone
+import json
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -27,16 +28,48 @@ def scheduled_mode(cron: str, now: datetime) -> str | None:
     return mode if now.astimezone(ZoneInfo("America/New_York")).utcoffset() == timedelta(hours=offset) else None
 
 
+def configured_slot(config, mode, now, state):
+    """Cheap preflight: do not install OpenBB for disabled/already-sent slots.
+
+    NYSE holidays are still checked by daily with the full calendar.
+    """
+    from stockwatch.report_settings import report_settings
+    local = now.astimezone(ZoneInfo("America/New_York"))
+    plan = report_settings(config.get("reports"))[mode]
+    if not plan["enabled"] or local.weekday() not in plan["days"] or local.strftime("%H:%M") < plan["time"]:
+        return False
+    if mode == "MONTHLY":
+        key = "last_monthly_period"
+        period = (local.date().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+    elif mode == "WEEKLY":
+        key = "last_weekly_period"
+        year, week, _ = local.date().isocalendar()
+        period = f"{year}-W{week:02d}"
+    else:
+        key = "last_report_session" if mode == "CLOSE" else "last_intraday_session"
+        period = local.date().isoformat()
+    return state.get("_meta", {}).get(key) != period
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cron", default="")
-    parser.add_argument("--mode", choices=("CLOSE", "INTRADAY"), default="CLOSE")
+    parser.add_argument("--mode", choices=("CLOSE", "INTRADAY", "WEEKLY", "MONTHLY"), default="CLOSE")
+    parser.add_argument("--scheduled", action="store_true")
+    parser.add_argument("--config", type=Path, default=Path("config.yaml"))
+    parser.add_argument("--state", type=Path, default=Path("data/state.json"))
     parser.add_argument("--github-output", type=Path, required=True)
     args = parser.parse_args()
     now = datetime.now(timezone.utc)
     mode = scheduled_mode(args.cron, now) if args.cron else args.mode
+    if mode and args.scheduled:
+        import yaml
+        config = yaml.safe_load(args.config.read_text(encoding="utf-8"))
+        state = json.loads(args.state.read_text(encoding="utf-8")) if args.state.exists() else {}
+        if not configured_slot(config, mode, now, state):
+            mode = None
     print(f"UTC={now.isoformat()} NY={now.astimezone(ZoneInfo('America/New_York')).isoformat()} "
-          f"cron={args.cron or 'manual'} mode={mode or 'SKIP (inactive DST slot)'}")
+          f"cron={args.cron or 'manual'} mode={mode or 'SKIP (inactive slot)'}")
     with args.github_output.open("a", encoding="utf-8") as output:
         output.write(f"should_run={str(mode is not None).lower()}\nmode={mode or ''}\n")
     return 0

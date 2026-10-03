@@ -33,7 +33,7 @@ def run(*, config_path: Path, transactions_path: Path, state_path: Path, output_
         rebuild_performance: bool = False, close_attempts: int = 3, close_retry_seconds: float = 120,
         sleeper: Callable = time.sleep, importer: Callable = sync_hsbc,
         import_state_path: Path | None = None) -> int:
-    session_key = report_session_key(mode)
+    session_key = report_session_key(mode) if mode in ("CLOSE", "INTRADAY") else f"last_{mode.lower()}_session"
     now = now or datetime.now(timezone.utc)
     config = load_config(config_path)
     lang = language(config)
@@ -57,10 +57,16 @@ def run(*, config_path: Path, transactions_path: Path, state_path: Path, output_
                 logger.info(t("HSBC sync: {imported} imported, {duplicates} duplicates, {skipped} skipped", lang, **result))
         except (HSBCSyncError, ValidationError, OSError) as exc:
             logger.error("HSBC sync failed (%s); portfolio report withheld", type(exc).__name__)
-            report = render_failure(session, "HSBC sync failed; the portfolio ledger may be incomplete.", [], 1, lang, mode=mode)
+            report = render_failure(session, "HSBC sync failed; the portfolio ledger may be incomplete.", [], 1, lang, mode=mode if mode in ("CLOSE", "INTRADAY") else "CLOSE")
             return deliver_failure(report, state, state_path, output_dir, session,
                                    f"last_hsbc_error_{mode.lower()}_session", settings if mail_enabled else None,
                                    sender, dry_run=dry_run)
+    if mode in ("WEEKLY", "MONTHLY"):
+        from stockwatch.periodic import run_summary
+        return run_summary(mode=mode, config=config, session=session, now=now, provider=provider,
+                           transactions_path=transactions_path, state_path=state_path, output_dir=output_dir,
+                           performance_path=performance_path or state_path.parent / "performance.json",
+                           dry_run=dry_run, demo=demo, force_send=force_send, sender=sender)
     transactions = load_transactions(transactions_path)
     attempts = close_attempts if mode == "CLOSE" and not (dry_run or demo or sent_before and not force_send) and mail_enabled and settings else 1
     if state.get("_meta", {}).get("last_close_error_session") == session.isoformat() and not force_send:
@@ -178,7 +184,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--lookback-days", type=int, metavar="DAYS", choices=range(1, 366), default=None, help="仅 --sync-only 的历史补录范围，不修改日常配置")
     result.add_argument("--sync-only", action="store_true", help="仅同步汇丰成交，不生成或发送日报")
     result.add_argument("--skip-hsbc", action="store_true", help="本次不读取 Gmail 或导入交易")
-    result.add_argument("--mode", choices=["CLOSE", "INTRADAY"], default="CLOSE", help="CLOSE 收盘日报；INTRADAY 仅在正常交易时段生成盘中快照")
+    result.add_argument("--mode", choices=["CLOSE", "INTRADAY", "WEEKLY", "MONTHLY"], default="CLOSE", help="CLOSE 收盘日报；INTRADAY 仅在正常交易时段生成盘中快照")
     result.add_argument("--dry-run", action="store_true", help="仅生成预览，不发送邮件，也不修改提醒状态")
     result.add_argument("--force-send", action="store_true", help="强制重发日报；提醒仍按原规则去重")
     result.add_argument("--scheduled", action="store_true", help="按模式检查纽约当天的交易时段，休市或不合时段则跳过")
@@ -208,6 +214,12 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             logger.info(t("HSBC sync: {imported} imported, {duplicates} duplicates, {skipped} skipped", lang, **result))
             return 0
+        config = load_config(config_path)
+        if args.scheduled and not args.demo:
+            from stockwatch.report_settings import scheduled_due
+            if not scheduled_due(config, args.mode, datetime.now(timezone.utc)):
+                logger.info("Report disabled or outside configured schedule; skipped")
+                return 0
         provider = DemoProvider() if args.demo else OpenBBProvider()
         now = datetime.now(timezone.utc)
         if args.demo:

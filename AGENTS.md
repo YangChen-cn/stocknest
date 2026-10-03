@@ -107,3 +107,11 @@ python tools/check_public_release.py
 - Provider 变更验证缺失 / 旧行情、有限重试、日期与失败隔离。UI 变更验证 AppTest，必要时检查浏览器 Demo；截图只能用虚构数据。
 - 成对维护完成前确认共享代码一致、两个工作区无意外修改、公开暂存区无个人文件。当前用户要求仅公开版运行 CI，私人版 CI 保持停用以节省额度；不要触发或重新启用私人版 CI。共享代码在公开版验证，检查新提交结果，不能用旧提交状态替代。
 - 交付说明写明改了什么、两版是否推送、怎样验证、实际限制及是否发送了邮件。不要承诺免费行情永不缺失、cron 精确送达或 SMTP 恰好一次投递。
+
+## 可选汇总与报告设置
+
+- `reports` 统一 INTRADAY / CLOSE / WEEKLY / MONTHLY 的独立开关、美东 HH:MM 和星期（0=周一至4=周五）。兼容旧配置：盘中、收盘开启；周报、月报默认关闭。周报选择一个星期，汇总本周截至报告日；月报在次月首个符合所选星期的 NYSE 交易日汇总上月。休市日跳过，不伪造收盘价。
+- 周/月汇总复用行情、performance、SMTP 和 JSON 数据架构，使用 `last_weekly_period` / `last_monthly_period` 去重；不检查或消费盘中、收盘提醒，不覆盖正式 performance。期间收益使用资金流调整后的 NAV，数据不完整不发送常规汇总；邮件失败或关闭时不记录已发送。
+- Dashboard 保存设置是本地写入；「同步并应用云端时间」先使用既有 Git 白名单同步，再手动触发 `scheduler.yml`。云端使用仅保存在 GitHub Secrets 的 `CRONJOB_API_KEY`，应用不保存 Key、不读取 gh 的 Token。只管理当前仓库 daily dispatch URL 下已有明确模式的正常定时任务，从已授权任务在内存复用请求头；不输出请求头、原始 API 错误或秘密。
+- 外部管理 API 缺失时不得声称时间已应用。GitHub 原生定时保留固定时段备用，不能声称任意 UI 时间都会改变原生 cron。禁用和已发送时段用轻量 preflight 跳过完整 runtime 安装；公开版 scheduler job 同样必须要求仓库私有。API 多条任务更新非原子，失败需检查实际任务并重新应用。
+- 控制/Gmail 设置位于 `ui_control.py`，报告表单位于 `ui_reports.py`；组合展示保留在 `ui.py`，避免所有控件继续堆入主 UI。
