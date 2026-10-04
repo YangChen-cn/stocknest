@@ -3,6 +3,8 @@ name: StockWatch CI
 on:
   push:
     paths-ignore:
+      - '**.md'
+      - 'docs/**'
       - data/state.json
       - data/performance.json
       - data/market_snapshot.json
