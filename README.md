@@ -328,3 +328,11 @@ If an updated Dashboard still displays old controls, its background Python proce
 ## Release notes
 
 See [v1.0.0 release notes](docs/releases/v1.0.0.md) for changes since v0.1.0.
+
+## A calmer daily view
+
+The dashboard and all four email reports share a warm, restrained layout. Holdings and price trends come first; report settings and optional editing stay collapsed. Refresh and AI export sit beside the page title. On a phone, metrics use a compact two-column layout and wide tables remain scrollable.
+
+Small record notes use existing transactions/history. A confirmed NAV high requires continuous, current history; missing or stale data never earns a new-high message. Intraday estimates are explicitly labelled. High-water-mark distance remains on Performance, while short original closing lines add context without forecasts or trading advice. Zero and unavailable values stay neutral. No additional market requests, dependencies or configuration are required.
+
+[Preview the redesigned daily email](docs/images/daily-email-demo.png) (synthetic Demo data).

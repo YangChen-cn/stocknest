@@ -290,13 +290,13 @@ def test_close_report_milestone_all_time_high_and_drawdown():
     config = {"portfolio": {"language": "zh-CN"}, "watchlist": {}}
     book = calculate({}, {})
     rising = render_report(DAY, book, {}, config, [], performance=performance_history(100, 110, 121))
-    assert "🎉" in rising.subject
-    assert "组合净值今日创出历史新高。🎉" in rising.text
-    assert "组合净值今日创出历史新高。🎉" in rising.html and "#e6f4ea" in rising.html
+    assert "组合净值创历史新高 · 2026-10-06 已收盘" in rising.text
+    assert "组合净值创历史新高 · 2026-10-06 已收盘" in rising.html
     falling = render_report(DAY, book, {}, config, [], performance=performance_history(100, 130, 120))
-    assert "🎉" not in falling.subject and "#e6f4ea" not in falling.html
-    assert "组合净值距 2026-10-05 的历史高点为 -7.69%。" in falling.text
-    assert "2026-10-05" in falling.html
+    assert "历史高点" not in falling.text and "历史新高" not in falling.html
+    for history in (performance_history(100, 110), performance_history(100, 110, None)):
+        stale = render_report(DAY, book, {}, config, [], performance=history)
+        assert "历史新高" not in stale.text and "历史新高" not in stale.html
     intraday = render_report(DAY, book, {}, config, [], mode="INTRADAY", generated_at=NOW,
                              performance=performance_history(100, 110, 121))
     assert "历史新高" not in intraday.text and "🎉" not in intraday.subject
@@ -309,13 +309,14 @@ def test_report_epigraph_rotates_by_day_and_language():
     zh = {"portfolio": {"language": "zh-CN"}, "watchlist": {}}
     en = {"portfolio": {"language": "en"}, "watchlist": {}}
     first = render_report(DAY, book, {}, zh, [])
-    expected_zh = "「" + QUOTES[DAY.toordinal() % len(QUOTES)][0] + "」"
+    expected_zh = QUOTES[DAY.toordinal() % len(QUOTES)][0]
     assert expected_zh in first.text and expected_zh in first.html
     english = render_report(DAY, book, {}, en, [])
-    expected_en = "“" + QUOTES[DAY.toordinal() % len(QUOTES)][1] + "”"
-    assert expected_en in english.text and expected_en in english.html
+    expected_en = QUOTES[DAY.toordinal() % len(QUOTES)][1]
+    from html import unescape
+    assert expected_en in english.text and expected_en in unescape(english.html)
     other = render_report(date(2026, 10, 5), book, {}, zh, [])
-    assert "「" + QUOTES[date(2026, 10, 5).toordinal() % len(QUOTES)][0] + "」" in other.text
+    assert QUOTES[date(2026, 10, 5).toordinal() % len(QUOTES)][0] in other.text
 
 
 def test_intraday_watchlist_empty_one_and_stable_ties():

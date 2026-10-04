@@ -6,6 +6,7 @@ from html import escape
 
 from stockwatch.calendar import previous_session
 from stockwatch.i18n import language, t
+from stockwatch.presentation import NEUTRAL, BORDER, SOFT, email_shell, email_section, reflection, record_note, value_color
 from stockwatch.notifications.email import EmailDeliveryError, EmailSettings, send_report
 from stockwatch.performance import DEFAULT_BENCHMARK, update_history
 from stockwatch.report_data import append_data, report_data, serialize_data
@@ -55,26 +56,41 @@ def render_summary(mode, session, portfolio, quotes, config, history, now, demo=
               ("Realized P/L", metrics["realized_pl_usd"], False), ("Fees", metrics["fees_usd"], False)]
     lines = [title, f"{start} — {end}", t("Holdings only; excluding dividends. Returns adjust for buy/sell flows.", lang), t("If established during this period, returns begin with the first contribution. Summary runs do not trigger alerts.", lang)]
     rows = []
+    holding_rows = []
     for label, value, is_percent in labels:
         if label == "Excess return (pp)" and value is not None:
             formatted = f"{value:+.2f} {t('pp', lang)}"
         else:
             formatted = percent(value, lang=lang) if is_percent else money(value, signed=label in ("Period P/L", "Realized P/L"), lang=lang)
         lines.append(f"{t(label, lang)}: {formatted}")
-        rows.append(f"<tr><td>{escape(t(label, lang))}</td><td style='text-align:right'>{escape(formatted)}</td></tr>")
+        color = value_color(value) if is_percent or label in ("Period P/L", "Realized P/L") else NEUTRAL
+        rows.append(f"<tr><td style='padding:8px 0;border-bottom:1px solid {BORDER}'>{escape(t(label, lang))}</td><td style='text-align:right;color:{color};font-weight:600'>{escape(formatted)}</td></tr>")
     lines.extend(["", t("Holdings", lang)])
     for holding in portfolio["holdings"]:
         symbol = holding["symbol"]
         line = f"{symbol}: {money(holding['price'], lang=lang)} · {holding['shares']} {t('Shares', lang)} · {t('Market Value', lang)} {money(holding['market_value'], lang=lang)} · {t('Return %', lang)} {percent(holding['return_pct'], lang=lang)}"
         lines.append(line)
-        rows.append(f"<tr><td colspan='2'>{escape(line)}</td></tr>")
+        holding_rows.append(f"<p style='margin:10px 0'>{escape(line)}</p>")
         thesis = config["watchlist"].get(symbol, {}).get("thesis", "").strip()
         if thesis:
             lines.append(thesis)
-            rows.append(f"<tr><td colspan='2'>{escape(thesis)}</td></tr>")
+            holding_rows.append(f"<p style='white-space:pre-wrap;overflow-wrap:anywhere;color:{NEUTRAL};font-size:14px'>{escape(thesis)}</p>")
     if demo:
         lines.append(t("Demo mode", lang))
-    html = f"<html><body><div style='max-width:640px;margin:auto;font-family:Arial;padding:16px'><h2>{escape(title)}</h2><p>{start} — {end}</p><p>{escape(lines[2])}</p><p>{escape(lines[3])}</p><table style='width:100%;border-spacing:0 12px'>{''.join(rows)}</table></div></body></html>"
+    notice = f"<p style='background:#fff4d9;padding:8px 12px'>{escape(t('SIMULATED DEMO DATA — not live market prices', lang))}</p>" if demo else ""
+    intro = f"<p style='color:{NEUTRAL};font-size:14px'>{escape(lines[2])}<br>{escape(lines[3])}</p>"
+    note = record_note(history, lang)
+    closing = reflection(end, lang)
+    hero = (f"<table role='presentation' style='width:100%;background:{SOFT};padding:12px;border-radius:8px'><tr>"
+            f"<td style='vertical-align:top'>{escape(t('Market Value', lang))}<br><strong class='mail-hero' style='font-size:30px'>{escape(money(portfolio['market_value'], lang=lang))}</strong></td>"
+            f"<td style='vertical-align:top;text-align:right'>{escape(t('Period holdings return', lang))}<br><strong class='mail-hero' style='font-size:26px;color:{value_color(metrics['portfolio_return_pct'])}'>{escape(percent(metrics['portfolio_return_pct'], lang=lang))}</strong></td></tr></table>")
+    content = notice + hero + f"<table class='mail-table' style='width:100%;border-collapse:collapse'>{''.join(rows[2:])}</table>"
+    content += email_section(t('Holdings', lang), ''.join(holding_rows)) + intro
+    if note:
+        content += f"<p style='color:{NEUTRAL};font-size:13px'>{escape(note)}</p>"
+    content += f"<p style='font-size:13px;color:{NEUTRAL}'>{escape(t('JSON data is attached for your own analysis.', lang))}</p>"
+    html = email_shell(title, f"{start} — {end}", content, lang, closing=closing)
+    lines.extend(["", closing, t('JSON data is attached for your own analysis.', lang)])
     data = report_data(end, portfolio, quotes, config, [], mode=mode, generated_at=now, demo=demo, performance=history)
     data['report_type'] = 'period_summary'
     data['period_summary'] = {k: str(v) if isinstance(v, Decimal) else v for k, v in metrics.items()}

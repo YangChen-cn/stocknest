@@ -136,9 +136,14 @@ def milestone_history(*navs):
 def test_milestone_status_new_high_drawdown_and_gaps():
     assert milestone_status(None) is None and milestone_status({"points": []}) is None
     assert milestone_status(milestone_history(100)) is None
-    status = milestone_status(milestone_history(100, None, 105))
-    assert status == {"new_high": True, "current_nav": 105.0, "peak_nav": 100.0, "peak_date": FIRST.isoformat(),
-                      "drawdown_pct": None, "as_of": THIRD.isoformat(), "basis": "session"}
+    assert milestone_status(milestone_history(100, None, 105)) is None
+    assert milestone_status(milestone_history(100, 105, None)) is None
+    missing = milestone_history(100, 101, 105)
+    missing["points"].pop(1)
+    assert milestone_status(missing) is None
+    assert milestone_status(milestone_history(100, 105), as_of=THIRD) is None
+    status = milestone_status(milestone_history(100, 101, 105), as_of=THIRD)
+    assert status["new_high"] and status["as_of"] == THIRD.isoformat()
     status = milestone_status(milestone_history(100, 130, 120))
     assert status["new_high"] is False and status["peak_date"] == SECOND.isoformat() and status["peak_nav"] == 130
     assert status["drawdown_pct"] == pytest.approx((120 / 130 - 1) * 100)
@@ -153,13 +158,13 @@ def test_milestone_status_intraday_estimate_requires_fresh_history():
     assert status["basis"] == "intraday" and status["new_high"] and status["as_of"] == THIRD.isoformat()
     assert status["current_nav"] == pytest.approx(112.2) and status["peak_nav"] == 110
     status = milestone_status(history, estimated_return_pct=None, as_of=THIRD)
-    assert status["basis"] == "session" and status["new_high"] and status["as_of"] == SECOND.isoformat()
+    assert status is None
     stale = milestone_history(100, 90)
     status = milestone_status(stale, estimated_return_pct=0, as_of=THIRD)
     assert status["basis"] == "intraday" and status["drawdown_pct"] == pytest.approx(-10)
     status = milestone_status(stale, estimated_return_pct=5, as_of=FOURTH)
     # A history older than the previous session never bridges the missing days.
-    assert status["basis"] == "session" and status["drawdown_pct"] == pytest.approx(-10)
+    assert status is None
 
 
 def test_bad_dates_storage_and_atomic_failure(tmp_path, monkeypatch):

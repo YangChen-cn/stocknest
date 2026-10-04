@@ -219,14 +219,26 @@ def milestone_status(history: dict | None, *, estimated_return_pct=None, as_of: 
     """
     if not history:
         return None
-    points = [point for point in history.get("points", []) if point.get("nav") is not None]
+    points = history.get("points", [])
+    if any(point.get("nav") is None for point in points):
+        return None
+    # Missing sessions must never become a continuous record by filtering them out.
+    if any(previous_session(date.fromisoformat(right["date"])).isoformat() != left["date"]
+           for left, right in zip(points, points[1:])):
+        return None
+    if any(not Decimal(str(point["nav"])).is_finite() or Decimal(str(point["nav"])) <= 0 for point in points):
+        return None
     if len(points) < 2:
         return None
     last = points[-1]
     current = Decimal(str(last["nav"]))
     extended = (estimated_return_pct is not None and as_of is not None
                 and date.fromisoformat(last["date"]) == previous_session(as_of))
+    if as_of is not None and not extended and last["date"] != as_of.isoformat():
+        return None
     if extended:
+        if not Decimal(str(estimated_return_pct)).is_finite() or Decimal(str(estimated_return_pct)) <= -100:
+            return None
         current *= 1 + Decimal(str(estimated_return_pct)) / 100
         window, basis = points, "intraday"
     else:

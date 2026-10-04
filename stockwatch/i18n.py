@@ -361,17 +361,29 @@ ZH.update({
 
 # Rotating report epigraphs — patience, accumulation and composure, never advice.
 QUOTES = (
-    ("不积跬步，无以至千里。", "Little by little, one travels far."),
-    ("不积小流，无以成江海。", "Small streams gather into the sea."),
-    ("水滴石穿，非一日之功。", "Constant dripping wears away the stone."),
-    ("静水流深。", "Still waters run deep."),
-    ("风物长宜放眼量。", "Measure the view with a long lens."),
-    ("路遥知马力，日久见功力。", "Distance tests the horse; time proves the strength."),
-    ("岁不寒，无以知松柏。", "Only winter reveals the evergreen."),
-    ("长风破浪会有时。", "A long wind will lift the sails in time."),
-    ("每临大事有静气。", "Composure carries the moment."),
-    ("工欲善其事，必先利其器。", "Sharpen the tool before the work begins."),
+    ("一天的变化，留在记录里。", "A day's changes, kept in your record."),
+    ("每一页记录，都让来路更清楚。", "Each entry makes the journey clearer."),
+    ("数字有起伏，记录有脉络。", "Numbers move; the record keeps the context."),
+    ("把今天记下，给生活留些空白。", "Keep today's record. Leave room for life."),
 )
+
+ZH.update({
+    "See the changes. Keep the record.": "看清变化，留下记录。",
+    "History covers {count} recorded trading days.": "历史已覆盖 {count} 个有效交易日。",
+    "Your record began on {date}.": "这份记录始于 {date}。",
+    "Current holdings": "当前持仓",
+    "More holding details": "更多持仓数据",
+    "Reports & automation": "报告与自动化",
+    "Price trends": "股票走势",
+    "Portfolio NAV reached a new high at the {date} close.": "组合净值创历史新高 · {date} 已收盘",
+    "Portfolio NAV is above its previous high (intraday estimate, {date}).": "组合净值高于历史高点 · {date} 盘中估算",
+    "Start with your first transaction, or explore with Demo mode.": "从第一笔交易开始记录，或先用演示模式看看。",
+    "Add your first transaction": "记录第一笔交易",
+    "JSON data is attached for your own analysis.": "随信附有 JSON 数据，方便交给 AI 分析。",
+    "Fees": "手续费",
+    "Return / Weight": "收益率 / 占比",
+    "5D / 1M": "5日 / 1月",
+})
 
 def language(config: dict) -> str:
     return config.get("portfolio", {}).get("language", "en")

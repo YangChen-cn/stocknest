@@ -32,7 +32,7 @@ def test_all_pages_empty_and_demo(app, page):
     app_test.sidebar.toggle[0].set_value(True).run()
     assert not app_test.exception and "SIMULATED" in app_test.warning[0].value
     if page == "Dashboard":
-        assert len(app_test.metric) == 5 and len(app_test.dataframe) == 1
+        assert len(app_test.metric) == 5 and len(app_test.dataframe) == 2
 
 
 def test_transactions_editor_save(app):
@@ -166,7 +166,7 @@ def test_chinese_pages_empty_and_demo(app, page):
     app_test.sidebar.toggle[0].set_value(True).run()
     assert not app_test.exception and "模拟演示数据" in app_test.warning[0].value
     if page == "Dashboard":
-        assert app_test.metric[0].label == "持仓成本"
+        assert app_test.metric[0].label == "持仓市值"
         assert "股票代码" in app_test.dataframe[0].value.columns
     if page == "Watchlist & Alerts":
         candidates, owned = app_test.dataframe[0].value, app_test.dataframe[1].value
@@ -438,14 +438,15 @@ def test_dashboard_deltas_and_all_time_high_caption(app, monkeypatch):
     monkeypatch.setattr(ui, "cached_snapshot", snapshot)
     monkeypatch.setattr(ui, "current_price_session", lambda now=None: date(2026, 10, 2))
     monkeypatch.setattr(ui, "chart_prices", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ui, "active_session", lambda now=None: date(2026, 10, 2))
     app_test.run()
     assert not app_test.exception
     daily = next(metric for metric in app_test.metric if metric.label == "Daily P/L")
     assert daily.value == "+$1.00" and daily.delta == "+10.00%"
     # previous_session(2026-10-02) is the last history day; the live gain chains on as an estimate.
-    assert any("all-time high" in item.value for item in app_test.markdown)
+    assert any("above its previous high (intraday estimate" in item.value for item in app_test.markdown)
     loss = next(widget for widget in app_test.metric if widget.label == "Unrealized P/L")
-    assert loss.delta == "+10.00%"
+    assert loss.value == "+$1.00"
 
     def losing_snapshot(config, rows_arg, day, demo):
         quotes = {"XYZ": Quote("XYZ", price=9, previous_close=10)}
@@ -456,4 +457,4 @@ def test_dashboard_deltas_and_all_time_high_caption(app, monkeypatch):
     assert not app_test.exception
     daily = next(metric for metric in app_test.metric if metric.label == "Daily P/L")
     assert daily.delta == "-10.00%"
-    assert any("all-time high" in caption.value for caption in app_test.caption)
+    assert not any("all-time high" in caption.value for caption in app_test.caption)
