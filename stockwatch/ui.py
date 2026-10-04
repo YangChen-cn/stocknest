@@ -5,6 +5,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+from pandas.io.formats.style import Styler
 import plotly.express as px
 import streamlit as st
 
@@ -14,7 +15,7 @@ from stockwatch.imports.gmail import sync_hsbc
 from stockwatch.imports.hsbc import HSBCSyncError
 from stockwatch.calendar import current_price_session, latest_session, active_session
 from stockwatch.history import period_start
-from stockwatch.performance import DEFAULT_BENCHMARK, build_history, load_history, fingerprint, period_returns
+from stockwatch.performance import DEFAULT_BENCHMARK, build_history, load_history, fingerprint, milestone_status, period_returns
 from stockwatch.control import (ControlError, trigger_workflow)
 from stockwatch.git_sync import SyncError, sync
 from stockwatch.i18n import LANGUAGES, data_status, error_message, language, t
@@ -191,12 +192,50 @@ def holdings_table(portfolio: dict) -> pd.DataFrame:
 
 def summary(portfolio: dict):
     columns = st.columns(5)
-    values = [("Total Cost", money(portfolio["total_cost"])), ("Market Value", money(portfolio["market_value"])),
-              ("Daily P/L", money(portfolio["daily_pl"], signed=True)),
-              ("Unrealized P/L", money(portfolio["unrealized_pl"], signed=True)), ("Holding unrealized return", percent(portfolio["return_pct"]))]
-    for column, (label, value) in zip(columns, values):
-        column.metric(text(label), value)
+    values = [("Total Cost", money(portfolio["total_cost"]), None),
+              ("Market Value", money(portfolio["market_value"]), None),
+              ("Daily P/L", money(portfolio["daily_pl"], signed=True),
+               percent(portfolio["daily_pct"]) if portfolio["daily_pct"] is not None else None),
+              ("Unrealized P/L", money(portfolio["unrealized_pl"], signed=True),
+               percent(portfolio["return_pct"]) if portfolio["return_pct"] is not None else None),
+              ("Holding unrealized return", percent(portfolio["return_pct"]), None)]
+    for column, (label, value, delta) in zip(columns, values):
+        column.metric(text(label), value, delta)
     st.caption(text("Daily P/L adjusts for recorded buys, sells and fees; trade-day returns use daily timing assumptions."))
+
+
+def milestone_caption(portfolio: dict, transactions, config: dict, demo: bool, as_of):
+    """All-time-high line from the local NAV history; silently absent when data is insufficient."""
+    benchmark = config["portfolio"].get("benchmark", DEFAULT_BENCHMARK)
+    try:
+        if demo:
+            history = cached_performance_preview([tx.row() for tx in transactions], benchmark, DemoProvider().session, True, None)
+        else:
+            history = load_history(ROOT / "data/performance.json")
+    except (ValidationError, OSError):
+        return
+    if not history or history["fingerprint"] != fingerprint(transactions, benchmark):
+        return
+    status = milestone_status(history, estimated_return_pct=portfolio["daily_pct"], as_of=as_of)
+    if status is None:
+        return
+    basis = text("intraday estimate") if status["basis"] == "intraday" else text("completed session")
+    if status["new_high"]:
+        st.markdown(f"🎉 **{text('Portfolio NAV set an all-time high ({date}, {basis}).', date=status['as_of'], basis=basis)}**")
+    else:
+        st.caption(text("Portfolio NAV is {value} from the all-time high of {date} ({basis}).",
+                       value=percent(status["drawdown_pct"], signed=False), date=status["peak_date"], basis=basis))
+
+
+def tint_gains_losses(frame: pd.DataFrame) -> Styler:
+    """Green/red text for signed money and percent strings; unavailable cells stay neutral."""
+    def tint(value):
+        if isinstance(value, str) and value.startswith("-"):
+            return "color: #b3261e"
+        if isinstance(value, str) and value.startswith("+"):
+            return "color: #137333"
+        return None
+    return frame.style.map(tint, subset=[text("Daily %"), text("Return %"), text("Unrealized P/L")])
 
 
 def chart_prices(symbols: list[str], as_of, demo: bool, key="holdings", optional=False):
@@ -661,6 +700,7 @@ def main(app_name: str = "StockWatch"):
             hsbc_control(config_path, config, demo)
     summary(portfolio)
     if page == "Dashboard":
+        milestone_caption(portfolio, transactions, config, demo, as_of)
         ai_export(config, transactions, portfolio, quotes, as_of, demo)
     unavailable = [symbol for symbol, quote in quotes.items() if quote.error or quote.price is None]
     if unavailable:
@@ -669,7 +709,7 @@ def main(app_name: str = "StockWatch"):
     if table.empty:
         st.info(text("No current holdings. Add transactions or enable Demo mode to explore StockWatch."))
     else:
-        st.dataframe(table, hide_index=True, width="stretch")
+        st.dataframe(tint_gains_losses(table), hide_index=True, width="stretch")
     if page == "Holdings":
         for row in portfolio["holdings"]:
             entry = config["watchlist"].get(row["symbol"], {})
@@ -698,9 +738,14 @@ def main(app_name: str = "StockWatch"):
                 st.caption(text("Charts show priced holdings only; allocation is not the complete portfolio."))
             chart_data = pd.DataFrame([{"Symbol": row["symbol"], "Market Value": float(row["market_value"]),
                                         "Return %": float(row["return_pct"])} for row in complete_rows])
+            chart_data["Direction"] = ["gain" if value >= 0 else "loss" for value in chart_data["Return %"]]
             left, right = st.columns(2)
             left.plotly_chart(px.pie(chart_data, names="Symbol", values="Market Value", hole=0.65, title=text("Portfolio allocation"), labels={"Symbol": text("Symbol"), "Market Value": text("Market Value")}), width="stretch")
-            right.plotly_chart(px.bar(chart_data, x="Symbol", y="Return %", title=text("Holding returns"), labels={"Symbol": text("Symbol"), "Return %": text("Return %")}), width="stretch")
+            holding_returns = px.bar(chart_data, x="Symbol", y="Return %", color="Direction",
+                                     color_discrete_map={"gain": "#137333", "loss": "#b3261e"},
+                                     title=text("Holding returns"), labels={"Symbol": text("Symbol"), "Return %": text("Return %")})
+            holding_returns.update_layout(showlegend=False)
+            right.plotly_chart(holding_returns, width="stretch")
     chart_day = DemoProvider().session if demo else latest_session()
     held_symbols = [row["symbol"] for row in portfolio["holdings"]]
     st.caption(text("Charts below show current holdings. Watch-only stocks are on Watchlist & Alerts."))

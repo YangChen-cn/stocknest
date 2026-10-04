@@ -410,3 +410,50 @@ def test_dashboard_hides_streamlit_developer_toolbar(app):
     app_test.run()
     assert not app_test.exception
     assert st.get_option("client.toolbarMode") == "minimal"
+
+
+def test_dashboard_deltas_and_all_time_high_caption(app, monkeypatch):
+    from datetime import date
+    import pandas as pd
+    from stockwatch import ui
+    from stockwatch.performance import build_history, save_history
+    from stockwatch.portfolio import calculate, positions
+    from stockwatch.providers.base import Quote
+    from stockwatch.storage import validate_transactions
+    app_test, root = app
+    rows = [{"date": "2026-09-28", "symbol": "XYZ", "side": "BUY", "shares": "1", "price": "10", "note": "", "fee": "0"}]
+    save_transactions(root / "data/transactions.csv", rows)
+    ledger = validate_transactions(rows)
+
+    class Prices:
+        def get_history_range(self, symbol, start, end):
+            return pd.DataFrame([{"date": day.date(), "close": 10 if symbol == "XYZ" else 100, "split_ratio": 0}
+                                 for day in pd.date_range(start, end)])
+    save_history(root / "data/performance.json", build_history(ledger, Prices(), date(2026, 10, 1)))
+
+    def snapshot(config, rows_arg, day, demo):
+        quotes = {"XYZ": Quote("XYZ", price=11, previous_close=10)}
+        return calculate(positions(validate_transactions(rows_arg), day), quotes), quotes
+    snapshot.clear = lambda: None
+    monkeypatch.setattr(ui, "cached_snapshot", snapshot)
+    monkeypatch.setattr(ui, "current_price_session", lambda now=None: date(2026, 10, 2))
+    monkeypatch.setattr(ui, "chart_prices", lambda *args, **kwargs: None)
+    app_test.run()
+    assert not app_test.exception
+    daily = next(metric for metric in app_test.metric if metric.label == "Daily P/L")
+    assert daily.value == "+$1.00" and daily.delta == "+10.00%"
+    # previous_session(2026-10-02) is the last history day; the live gain chains on as an estimate.
+    assert any("all-time high" in item.value for item in app_test.markdown)
+    loss = next(widget for widget in app_test.metric if widget.label == "Unrealized P/L")
+    assert loss.delta == "+10.00%"
+
+    def losing_snapshot(config, rows_arg, day, demo):
+        quotes = {"XYZ": Quote("XYZ", price=9, previous_close=10)}
+        return calculate(positions(validate_transactions(rows_arg), day), quotes), quotes
+    losing_snapshot.clear = lambda: None
+    monkeypatch.setattr(ui, "cached_snapshot", losing_snapshot)
+    app_test.run()
+    assert not app_test.exception
+    daily = next(metric for metric in app_test.metric if metric.label == "Daily P/L")
+    assert daily.delta == "-10.00%"
+    assert any("all-time high" in caption.value for caption in app_test.caption)

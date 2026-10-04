@@ -350,6 +350,15 @@ ZH.update({
     "HSBC import currently requires macOS or Linux file locking.": "本地汇丰导入暂支持 macOS / Linux；其他系统可用云端同步。",
 })
 
+ZH.update({
+    "Portfolio NAV set an all-time high today. 🎉": "组合净值今日创出历史新高。🎉",
+    "Portfolio NAV is {value} from the all-time high of {date}.": "组合净值距 {date} 的历史高点为 {value}。",
+    "Portfolio NAV set an all-time high ({date}, {basis}).": "组合净值创历史新高（{date}，{basis}）。",
+    "Portfolio NAV is {value} from the all-time high of {date} ({basis}).": "组合净值距 {date} 的历史高点为 {value}（{basis}）。",
+    "completed session": "已收盘",
+    "intraday estimate": "盘中估算",
+})
+
 def language(config: dict) -> str:
     return config.get("portfolio", {}).get("language", "en")
 

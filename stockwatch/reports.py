@@ -9,8 +9,10 @@ from stockwatch.alerts import Alert, report_session_key, target_distances
 from stockwatch.calendar import NY
 from stockwatch.i18n import data_status, language, t
 from stockwatch.providers.base import Quote
-from stockwatch.performance import period_returns
+from stockwatch.performance import milestone_status, period_returns
 from stockwatch.report_data import append_data, report_data, serialize_data
+
+GREEN, RED, NEUTRAL = "#137333", "#b3261e", "#5f6368"
 
 
 def money(value, *, signed: bool = False, lang: str = "en") -> str:
@@ -68,17 +70,41 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
     def p(value, **options):
         return percent(value, lang=lang, **options)
 
+    def value_color(value):
+        if value is None:
+            return NEUTRAL
+        return GREEN if value >= 0 else RED
+
+    def section(heading: str, body: str) -> str:
+        return (f"<h2 style='margin:26px 0 10px;font-size:16px'>{escape(heading)}</h2>"
+                f"<div style='border:1px solid #e8eaed;border-radius:12px;padding:12px 14px'>{body}</div>")
+
+    def styled_table(headers: tuple[str, ...], rows_html: str) -> str:
+        head = "".join(f"<th style='padding:8px;background:#f8f9fa;color:{NEUTRAL};font-size:11px;"
+                       f"letter-spacing:0.5px;text-transform:uppercase;text-align:left'>{escape(tr(header))}</th>" for header in headers)
+        return f"<table style='width:100%;border-collapse:collapse;font-size:13px;text-align:left'><tr>{head}</tr>{rows_html}</table>"
+
+    def shade_style(index: int) -> str:
+        return f"padding:8px;border-bottom:1px solid #f1f3f4;background:{'#ffffff' if index % 2 == 0 else '#fafafa'}"
+
     heading = tr("StockWatch Intraday" if intraday else "StockWatch Daily")
     title = f"{heading} — {session.isoformat()}"
     timing = tr("Snapshot at {time} New York · not final closing prices", time=generated_at.astimezone(NY).strftime("%H:%M %Z")) if intraday else tr("Completed NYSE session · USD")
     short_date = f"{session.month}月{session.day}日" if lang == "zh-CN" else f"{session.strftime('%b')} {session.day}"
-    subject = f"{heading} | {p(portfolio['daily_pct'])} | {short_date}"
+    # Milestones stay on completed sessions; intraday never claims a final high.
+    milestone = milestone_status(performance) if not intraday and performance else None
+    subject = f"{heading} | {p(portfolio['daily_pct'])} | {short_date}" + (" 🎉" if milestone and milestone["new_high"] else "")
     summary = [(tr("Total Cost"), m(portfolio["total_cost"])), (tr("Market Value"), m(portfolio["market_value"])),
                (tr("Daily P/L"), f"{m(portfolio['daily_pl'], signed=True)} ({p(portfolio['daily_pct'])})"),
                (tr("Unrealized P/L"), m(portfolio["unrealized_pl"], signed=True)),
                (tr("Holding unrealized return"), p(portfolio["return_pct"]))]
     if intraday:
         summary = summary[1:3]
+    milestone_line = None
+    if milestone:
+        milestone_line = (tr("Portfolio NAV set an all-time high today. 🎉") if milestone["new_high"]
+                          else tr("Portfolio NAV is {value} from the all-time high of {date}.",
+                                  value=p(milestone["drawdown_pct"], signed=False), date=milestone["peak_date"]))
     lines = [title, timing, "", tr("SIMULATED DEMO DATA — not live market prices") if demo else tr("Regular-session prices · USD"), "", tr("Portfolio")]
     data_warning = tr("Market data is missing; this report cannot provide a complete portfolio valuation.") if portfolio["market_value"] is None else ""
     if data_warning:
@@ -93,9 +119,11 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
         if not intraday:
             performance_lines.append(tr("Realized P/L: {value}", value=m(portfolio.get("realized_pl"), signed=True)))
         lines.extend(["", tr("Performance")] + performance_lines)
+        if milestone_line:
+            lines.append(milestone_line)
     lines.extend(["", tr("Holdings")])
     holding_html = []
-    for row in portfolio["holdings"]:
+    for index, row in enumerate(portfolio["holdings"]):
         lines.extend(["", row["symbol"], m(row["price"]), tr("Today {value}", value=p(row["daily_pct"]))])
         if not intraday:
             lines.extend([tr("Shares {shares} · Avg Cost {cost}", shares=row["shares"], cost=m(row["average_cost"])),
@@ -105,20 +133,22 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
         thesis = config["watchlist"].get(row["symbol"], {}).get("thesis", "").strip()
         if thesis:
             lines.append(tr("Thesis") + ": " + thesis)
-        color = "#137333" if row["unrealized_pl"] is not None and row["unrealized_pl"] >= 0 else "#b3261e"
+        shade = "#ffffff" if index % 2 == 0 else "#fafafa"
+        base = f"padding:12px 8px;border-bottom:1px solid #f1f3f4;background:{shade}"
+        total_color = value_color(row["unrealized_pl"])
         cells = [
-            f"<td style='padding:12px 6px;border-bottom:1px solid #eee'><strong>{escape(row['symbol'])}</strong><br><span style='color:#666'>{escape(tr('{shares} shares', shares=row['shares']))}</span></td>",
-            f"<td style='padding:12px 6px;border-bottom:1px solid #eee'>{escape(m(row['price']))}<br><small>{escape(tr('{value} today', value=p(row['daily_pct'])))}</small></td>"]
+            f"<td style='{base}'><strong>{escape(row['symbol'])}</strong><br><span style='color:{NEUTRAL}'>{escape(tr('{shares} shares', shares=row['shares']))}</span></td>",
+            f"<td style='{base}'>{escape(m(row['price']))}<br><small style='color:{value_color(row['daily_pct'])}'>{escape(tr('{value} today', value=p(row['daily_pct'])))}</small></td>"]
         if not intraday:
             cells.extend([
-            f"<td style='padding:12px 6px;border-bottom:1px solid #eee;color:{color}'>{escape(m(row['unrealized_pl'], signed=True))}<br><small>{escape(tr('{value} total', value=p(row['return_pct'])))}</small></td>",
-            f"<td style='padding:12px 6px;border-bottom:1px solid #eee'>{escape(p(row['weight_pct'], signed=False))}</td>"])
+            f"<td style='{base};color:{total_color}'>{escape(m(row['unrealized_pl'], signed=True))}<br><small>{escape(tr('{value} total', value=p(row['return_pct'])))}</small></td>",
+            f"<td style='{base}'>{escape(p(row['weight_pct'], signed=False))}</td>"])
         if intraday:
             stamp = quotes[row["symbol"]].price_at
-            cells.append(f"<td style='padding:12px 6px;border-bottom:1px solid #eee'>{escape(stamp.astimezone(NY).strftime('%H:%M %Z') if stamp else tr('Data unavailable'))}</td>")
+            cells.append(f"<td style='{base}'>{escape(stamp.astimezone(NY).strftime('%H:%M %Z') if stamp else tr('Data unavailable'))}</td>")
         holding_html.append("<tr>" + "".join(cells) + "</tr>")
         if thesis:
-            holding_html.append(f"<tr><td colspan='{3 if intraday else 4}' style='padding:0 6px 10px;color:#666;font-size:13px;white-space:pre-wrap;word-break:break-word'>{escape(tr('Thesis'))}: {escape(thesis)}</td></tr>")
+            holding_html.append(f"<tr><td colspan='{3 if intraday else 4}' style='padding:0 8px 10px;color:{NEUTRAL};font-size:13px;white-space:pre-wrap;word-break:break-word'>{escape(tr('Thesis'))}: {escape(thesis)}</td></tr>")
     if not portfolio["holdings"]:
         lines.append(tr("No current holdings."))
         holding_html.append(f"<tr><td colspan='{3 if intraday else 4}' style='padding:12px'>{escape(tr('No current holdings.'))}</td></tr>")
@@ -129,14 +159,19 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
         ranking = tr("Absolute daily change reaches 5%; ranked by magnitude. Normal-session snapshots, not final closes.")
         lines.extend(["", heading_watch, ranking])
         cells = []
-        for quote in highlights:
+        for index, quote in enumerate(highlights):
             stamp = quote.price_at.astimezone(NY).strftime("%H:%M %Z") if quote.price_at else tr("Data unavailable")
             values = [quote.symbol, m(quote.price), p(quote.daily_move_pct), stamp]
             lines.append(tr("{symbol}: {price} · Today {daily} · Price time {time} New York",
                             symbol=quote.symbol, price=values[1], daily=values[2], time=stamp))
-            cells.append("<tr>" + "".join(f"<td style='padding:8px 3px;border-bottom:1px solid #eee'>{escape(value)}</td>" for value in values) + "</tr>")
+            style = shade_style(index)
+            cells.append("<tr>" + f"<td style='{style}'><strong>{escape(values[0])}</strong></td>"
+                         + f"<td style='{style}'>{escape(values[1])}</td>"
+                         + f"<td style='{style};color:{value_color(quote.daily_move_pct)}'>{escape(values[2])}</td>"
+                         + f"<td style='{style}'>{escape(values[3])}</td></tr>")
         headers = ("Symbol", "Current Price", "Daily %", "Price time (New York)")
-        watch_html = "<h2 style='font-size:18px'>" + escape(heading_watch) + "</h2><p style='font-size:12px;color:#666'>" + escape(ranking) + "</p><table style='width:100%;font-size:12px;border-collapse:collapse;text-align:left'><tr>" + "".join("<th>" + escape(tr(header)) + "</th>" for header in headers) + "</tr>" + "".join(cells) + "</table>"
+        watch_html = section(heading_watch, f"<p style='font-size:12px;color:{NEUTRAL};margin:0 0 8px'>{escape(ranking)}</p>"
+                             + styled_table(headers, "".join(cells)))
     if not intraday and config["watchlist"]:
         rows = watchlist_rows if watchlist_rows is not None else [
             {"Symbol": symbol, "Current Price": quotes.get(symbol, Quote(symbol)).price,
@@ -144,13 +179,18 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
             for symbol in config["watchlist"]]
         lines.extend(["", tr("Watchlist summary (closing prices)")])
         watch_cells = []
-        for row in rows:
+        for index, row in enumerate(rows):
             values = [row["Symbol"], m(row["Current Price"]), p(row["Daily %"]), p(row["5D %"]), p(row["1M %"])]
             lines.append(tr("{symbol}: {price} · Today {daily} · 5D {five} · 1M {month}",
                             symbol=values[0], price=values[1], daily=values[2], five=values[3], month=values[4]))
-            watch_cells.append("<tr>" + "".join(f"<td style='padding:8px 3px;border-bottom:1px solid #eee'>{escape(value)}</td>" for value in values) + "</tr>")
+            style = shade_style(index)
+            watch_cells.append("<tr>" + f"<td style='{style}'><strong>{escape(str(values[0]))}</strong></td>"
+                               + f"<td style='{style}'>{escape(values[1])}</td>"
+                               + f"<td style='{style};color:{value_color(row['Daily %'])}'>{escape(values[2])}</td>"
+                               + f"<td style='{style};color:{value_color(row['5D %'])}'>{escape(values[3])}</td>"
+                               + f"<td style='{style};color:{value_color(row['1M %'])}'>{escape(values[4])}</td></tr>")
         headers = ("Symbol", "Current Price", "Daily %", "5D %", "1M %")
-        watch_html = "<h2 style='font-size:18px'>" + escape(tr("Watchlist summary (closing prices)")) + "</h2><table style='width:100%;font-size:12px;border-collapse:collapse;text-align:left'><tr>" + "".join("<th>" + escape(tr(header)) + "</th>" for header in headers) + "</tr>" + "".join(watch_cells) + "</table>"
+        watch_html = section(tr("Watchlist summary (closing prices)"), styled_table(headers, "".join(watch_cells)))
     alert_messages = [alert.message for alert in alerts]
     distances = target_distances(config, quotes) if not intraday else []
     unusual = []
@@ -187,25 +227,74 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
     def paragraphs(items: list[str]) -> str:
         return "".join(f"<p style='margin:8px 0'>{escape(item)}</p>" for item in items)
 
-    summary_html = "".join(f"<tr><td style='padding:6px 0;color:#555'>{escape(name)}</td><td style='padding:6px 0;text-align:right;font-weight:600'>{escape(value)}</td></tr>" for name, value in summary)
+    hero = f"""<table role="presentation" style="width:100%"><tr>
+<td style="vertical-align:bottom"><p style="margin:0;font-size:12px;color:{NEUTRAL}">{escape(tr("Market Value"))}</p>
+<p style="margin:2px 0 0;font-size:26px;font-weight:700">{escape(m(portfolio["market_value"]))}</p></td>
+<td style="vertical-align:bottom;text-align:right"><p style="margin:0;font-size:12px;color:{NEUTRAL}">{escape(tr("Daily P/L"))}</p>
+<p style="margin:2px 0 0;font-size:26px;font-weight:700;color:{value_color(portfolio["daily_pl"])}">{escape(m(portfolio["daily_pl"], signed=True))}</p>
+<p style="margin:0;font-size:12px;color:{value_color(portfolio["daily_pct"])}">{escape(p(portfolio["daily_pct"]))}</p></td></tr></table>"""
+    if milestone:
+        if milestone["new_high"]:
+            milestone_html = ("<div style='margin:14px 0 0'><span style='background:#e6f4ea;color:" + GREEN +
+                              ";border-radius:999px;padding:6px 14px;font-size:13px;font-weight:600'>"
+                              + escape(tr("Portfolio NAV set an all-time high today. 🎉")) + "</span></div>")
+        else:
+            milestone_html = ("<div style='margin:14px 0 0'><span style='background:#f1f3f4;color:" + NEUTRAL +
+                              ";border-radius:999px;padding:6px 14px;font-size:13px'>"
+                              + escape(tr("Portfolio NAV is {value} from the all-time high of {date}.",
+                                          value=p(milestone["drawdown_pct"], signed=False), date=milestone["peak_date"]))
+                              + "</span></div>")
+    else:
+        milestone_html = ""
+    if not intraday:
+        labeled = [(tr("Total Cost"), m(portfolio["total_cost"]), NEUTRAL),
+                   (tr("Unrealized P/L"), m(portfolio["unrealized_pl"], signed=True), value_color(portfolio["unrealized_pl"])),
+                   (tr("Holding unrealized return"), p(portfolio["return_pct"]), value_color(portfolio["return_pct"]))]
+        summary_block = (f"<table role='presentation' style='width:100%;margin:14px 0 0;border-top:1px solid #f1f3f4'>"
+                         + "".join(f"<tr><td style='padding:7px 0;font-size:13px;color:{NEUTRAL}'>{escape(name)}</td>"
+                                   f"<td style='padding:7px 0;text-align:right;font-weight:600;color:{color}'>{escape(value)}</td></tr>"
+                                   for name, value, color in labeled) + "</table>")
+    else:
+        summary_block = ""
+    demo_banner = (f"<div style='background:#fef7e0;border:1px solid #fdd663;border-radius:10px;padding:10px 14px;"
+                   f"margin:0 0 14px;color:#7c5800;font-size:13px'>⚠️ {escape(tr('SIMULATED DEMO DATA — not live market prices'))}</div>") if demo else ""
+    warning_banner = (f"<div style='background:#fce8e6;border:1px solid #f6aea9;border-radius:10px;padding:10px 14px;"
+                      f"margin:0 0 14px;color:{RED};font-size:13px'>{escape(data_warning)}</div>") if data_warning else ""
+    head = (f"<div style='background:#1a73e8;padding:22px 24px'><h1 style='margin:0;font-size:21px;color:#ffffff'>{escape(heading)}</h1>"
+            f"<p style='margin:6px 0 0;font-size:13px;color:#d2e3fc'>{session.isoformat()} · {escape(tr('USD'))} · {escape(tr('Regular session'))}</p></div>")
+    holdings_headers = ("Symbol", "Price / Day", "Price time (New York)") if intraday else ("Symbol", "Price / Day", "P/L / Return", "Weight")
+    holdings_block = section(tr("Holdings"), styled_table(holdings_headers, "".join(holding_html)))
+    performance_block = section(tr("Performance"), paragraphs(performance_lines)) if performance_lines else ""
+    alerts_body = (f"<div style='background:#fef7e0;border-radius:8px;padding:10px 12px'>{paragraphs(alert_messages)}</div>"
+                   if alert_messages else paragraphs([tr("No new alerts.")]))
+    alerts_block = section(tr("Alerts"), alerts_body)
+    notable_block = (section(tr("Notable moves"), paragraphs(unusual or [tr("No moves reached the threshold.")]))
+                     if intraday and (unusual or not highlights) else "")
+    near_block = (section(tr("Near candidate price (within 5%)" if intraday else "Target price distances (informational)"),
+                          paragraphs(distances or [tr("No candidates within 5% of target.")])) if distances or intraday else "")
+    errors_block = (section(tr("Data availability"), f"<div style='background:#fce8e6;border-radius:8px;padding:10px 12px'>{paragraphs(errors)}</div>")
+                    if errors else "")
+    footer = (f"<p style='font-size:11px;color:#80868b;line-height:1.6;margin:24px 0 0;padding-top:14px;border-top:1px solid #e8eaed'>"
+              f"{escape(lines[-3])}<br>{escape(lines[-2])}<br>{escape(lines[-1])}</p>")
     html = f"""<!doctype html><html lang="{lang}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:12px;background:#f5f7fa;font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;color:#202124">
-<div style="max-width:640px;margin:0 auto;background:white;padding:20px;border-radius:12px">
-<h1 style="font-size:22px;margin:0 0 6px">{escape(heading)}</h1><p style="color:#666;margin:0 0 16px">{session.isoformat()} · {escape(tr('USD'))} · {escape(tr('Regular session'))}</p>
-<p style="color:#666;font-size:13px">{escape(timing)}</p>
-{paragraphs([data_warning]) if data_warning else ''}
-{paragraphs([tr('SIMULATED DEMO DATA — not live market prices')]) if demo else ''}
-<table role="presentation" style="width:100%;font-size:15px">{summary_html}</table>
-{'<h2 style="font-size:18px">' + escape(tr('Performance')) + '</h2>' + paragraphs(performance_lines) if performance_lines else ''}
-<h2 style="font-size:18px">{escape(tr('Holdings'))}</h2><table style="width:100%;border-collapse:collapse;font-size:13px;text-align:left">
-<tr><th>{escape(tr('Symbol'))}</th><th>{escape(tr('Price / Day'))}</th>{'<th>' + escape(tr('Price time (New York)')) + '</th>' if intraday else '<th>' + escape(tr('P/L / Return')) + '</th><th>' + escape(tr('Weight')) + '</th>'}</tr>{''.join(holding_html)}</table>
+<body style="margin:0;padding:16px 8px;background:#f0f2f5;font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;color:#202124">
+<div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e8eaed;border-radius:16px;overflow:hidden">
+{head}
+<div style="padding:20px 24px">
+<p style="margin:0 0 14px;font-size:13px;color:{NEUTRAL}">{escape(timing)}</p>
+{demo_banner}{warning_banner}
+{hero}
+{milestone_html}
+{summary_block}
+{performance_block}
+{holdings_block}
 {watch_html}
-<h2 style="font-size:18px">{escape(tr('Alerts'))}</h2>{paragraphs(alert_messages or [tr('No new alerts.')])}
-{'<h2 style="font-size:18px">' + escape(tr('Notable moves')) + '</h2>' + paragraphs(unusual or [tr('No moves reached the threshold.')]) if intraday and (unusual or not highlights) else ''}
-{'<h3 style="font-size:15px">' + escape(tr('Near candidate price (within 5%)' if intraday else 'Target price distances (informational)')) + '</h3>' + paragraphs(distances or [tr('No candidates within 5% of target.')]) if distances or intraday else ''}
-{'<h2 style="font-size:18px">' + escape(tr('Data availability')) + '</h2>' + paragraphs(errors) if errors else ''}
-<p style="font-size:12px;color:#666;margin-top:24px">{escape(lines[-3])}<br>{escape(lines[-2])}<br>{escape(lines[-1])}</p>
-</div></body></html>"""
+{alerts_block}
+{notable_block}
+{near_block}
+{errors_block}
+{footer}
+</div></div></body></html>"""
     data = report_data(session, portfolio, quotes, config, alerts, mode=mode, generated_at=generated_at,
                        demo=demo, performance=performance, watchlist_rows=watchlist_rows)
     if intraday:
@@ -224,8 +313,13 @@ def render_failure(session: date, reason: str, symbols: list[str], attempts: int
         lines.append(t("Unavailable symbols: {symbols}", lang, symbols=", ".join(symbols)))
     subject = f"{heading} | {mode} | {session}"
     html = (f'<!doctype html><html lang="{lang}"><meta charset="UTF-8">'
-            '<meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:Arial;padding:16px">'
-            + "".join(f"<p>{escape(line)}</p>" for line in lines) + '</body></html>')
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            f'<body style="margin:0;padding:16px 8px;background:#f0f2f5;font-family:Arial,\'PingFang SC\',\'Microsoft YaHei\',sans-serif;color:#202124">'
+            '<div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e8eaed;border-radius:16px;overflow:hidden">'
+            f'<div style="background:{RED};padding:20px 24px"><h1 style="margin:0;font-size:20px;color:#ffffff">{escape(lines[0])}</h1></div>'
+            '<div style="padding:20px 24px">'
+            + "".join(f"<p style='margin:8px 0'>{escape(line)}</p>" for line in lines[1:])
+            + '</div></div></body></html>')
     data = {
         "schema": "stockwatch.report", "schema_version": 1, "report_type": "error",
         "session": session.isoformat(), "mode": mode, "reason": reason,

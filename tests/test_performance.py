@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from stockwatch.history import period_start, price_return, sessions
-from stockwatch.performance import (build_history, daily_result, fingerprint, load_history,
+from stockwatch.performance import (build_history, daily_result, fingerprint, load_history, milestone_status,
                                     period_returns, save_history, update_history)
 from stockwatch.portfolio import accounting
 from stockwatch.providers.base import Quote
@@ -126,6 +126,40 @@ def test_split_protection_even_when_encountered_incrementally():
     new = build_history(ledger, Prices(split={("XYZ", THIRD): 2}), THIRD, existing=old)
     assert all(p["nav"] is None for p in new["points"][1:])
     assert "split" in new["points"][-1]["errors"][0]
+
+
+def milestone_history(*navs):
+    points = [{"date": day.isoformat(), "nav": value} for day, value in zip((FIRST, SECOND, THIRD, FOURTH), navs)]
+    return {"version": 1, "fingerprint": "0" * 64, "benchmark": "SPY", "points": points}
+
+
+def test_milestone_status_new_high_drawdown_and_gaps():
+    assert milestone_status(None) is None and milestone_status({"points": []}) is None
+    assert milestone_status(milestone_history(100)) is None
+    status = milestone_status(milestone_history(100, None, 105))
+    assert status == {"new_high": True, "current_nav": 105.0, "peak_nav": 100.0, "peak_date": FIRST.isoformat(),
+                      "drawdown_pct": None, "as_of": THIRD.isoformat(), "basis": "session"}
+    status = milestone_status(milestone_history(100, 130, 120))
+    assert status["new_high"] is False and status["peak_date"] == SECOND.isoformat() and status["peak_nav"] == 130
+    assert status["drawdown_pct"] == pytest.approx((120 / 130 - 1) * 100)
+    status = milestone_status(milestone_history(100, 100))
+    assert status["new_high"] is False and status["drawdown_pct"] == 0
+
+
+def test_milestone_status_intraday_estimate_requires_fresh_history():
+    history = milestone_history(100, 110)
+    status = milestone_status(history, estimated_return_pct=Decimal("2"), as_of=THIRD)
+    # previous_session(THIRD) == SECOND, so the live return may be chained on.
+    assert status["basis"] == "intraday" and status["new_high"] and status["as_of"] == THIRD.isoformat()
+    assert status["current_nav"] == pytest.approx(112.2) and status["peak_nav"] == 110
+    status = milestone_status(history, estimated_return_pct=None, as_of=THIRD)
+    assert status["basis"] == "session" and status["new_high"] and status["as_of"] == SECOND.isoformat()
+    stale = milestone_history(100, 90)
+    status = milestone_status(stale, estimated_return_pct=0, as_of=THIRD)
+    assert status["basis"] == "intraday" and status["drawdown_pct"] == pytest.approx(-10)
+    status = milestone_status(stale, estimated_return_pct=5, as_of=FOURTH)
+    # A history older than the previous session never bridges the missing days.
+    assert status["basis"] == "session" and status["drawdown_pct"] == pytest.approx(-10)
 
 
 def test_bad_dates_storage_and_atomic_failure(tmp_path, monkeypatch):

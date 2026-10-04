@@ -277,6 +277,31 @@ def test_intraday_watchlist_top_three_by_absolute_move_without_targets():
     assert "观察股异动 ≥5%（最多3只）" not in close.html
 
 
+def performance_history(*navs):
+    points = [{"date": day, "market_value": nav, "cost": 100.0, "inflow": 0.0, "outflow": 0.0,
+               "daily_pl": 0.0, "daily_return_pct": 0.0, "nav": nav, "benchmark_nav": nav,
+               "realized_pl": 0.0, "fees": 0.0, "errors": []}
+              for day, nav in zip(("2026-10-02", "2026-10-05", "2026-10-06"), navs)]
+    return {"version": 1, "fingerprint": "0" * 64, "benchmark": "SPY", "benchmark_base": 100.0, "points": points}
+
+
+def test_close_report_milestone_all_time_high_and_drawdown():
+    from stockwatch.portfolio import calculate
+    config = {"portfolio": {"language": "zh-CN"}, "watchlist": {}}
+    book = calculate({}, {})
+    rising = render_report(DAY, book, {}, config, [], performance=performance_history(100, 110, 121))
+    assert "🎉" in rising.subject
+    assert "组合净值今日创出历史新高。🎉" in rising.text
+    assert "组合净值今日创出历史新高。🎉" in rising.html and "#e6f4ea" in rising.html
+    falling = render_report(DAY, book, {}, config, [], performance=performance_history(100, 130, 120))
+    assert "🎉" not in falling.subject and "#e6f4ea" not in falling.html
+    assert "组合净值距 2026-10-05 的历史高点为 -7.69%。" in falling.text
+    assert "2026-10-05" in falling.html
+    intraday = render_report(DAY, book, {}, config, [], mode="INTRADAY", generated_at=NOW,
+                             performance=performance_history(100, 110, 121))
+    assert "历史新高" not in intraday.text and "🎉" not in intraday.subject
+
+
 def test_intraday_watchlist_empty_one_and_stable_ties():
     from stockwatch.reports import intraday_watchlist_highlights
     config = {"watchlist": {"A": {}, "B": {}}}

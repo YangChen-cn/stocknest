@@ -210,6 +210,35 @@ def update_history(path, transactions, provider, end, benchmark=DEFAULT_BENCHMAR
     return new
 
 
+def milestone_status(history: dict | None, *, estimated_return_pct=None, as_of: date | None = None) -> dict | None:
+    """All-time-high / drawdown derived from the stored NAV series. Display-only, never persisted.
+
+    Session basis compares the last stored point with all earlier points. When the history ends
+    exactly at the previous session, the live daily return may be chained on as an intraday
+    estimate; older histories never bridge missing sessions.
+    """
+    if not history:
+        return None
+    points = [point for point in history.get("points", []) if point.get("nav") is not None]
+    if len(points) < 2:
+        return None
+    last = points[-1]
+    current = Decimal(str(last["nav"]))
+    extended = (estimated_return_pct is not None and as_of is not None
+                and date.fromisoformat(last["date"]) == previous_session(as_of))
+    if extended:
+        current *= 1 + Decimal(str(estimated_return_pct)) / 100
+        window, basis = points, "intraday"
+    else:
+        window, basis = points[:-1], "session"
+    peak_point = max(window, key=lambda point: (Decimal(str(point["nav"])), point["date"]))
+    peak = Decimal(str(peak_point["nav"]))
+    new_high = current > peak
+    return {"new_high": new_high, "current_nav": float(current), "peak_nav": float(peak),
+            "peak_date": peak_point["date"], "drawdown_pct": None if new_high else float((current / peak - 1) * 100),
+            "as_of": as_of.isoformat() if extended else last["date"], "basis": basis}
+
+
 def period_returns(history, period="ALL") -> dict:
     empty = {"portfolio": None, "benchmark": None, "excess": None}
     if not history or len(history["points"]) < 2:
