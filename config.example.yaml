@@ -12,6 +12,12 @@ imports:
     allow_email_date: true    # use email date in New York if trade date is absent
     lookback_days: 3
 
+# Scheduler switch, editable from the dashboard (locally or on Streamlit Cloud):
+# native = GitHub's built-in weekday schedule; cron-job.org = external triggers own
+# the exact times, and GitHub's native schedule slots are skipped while selected.
+scheduler:
+  trigger: native              # native / cron-job.org
+
 # Daily: New York time; weekdays 0=Monday ... 4=Friday.
 # Weekly/monthly: Hong Kong time, weekly Saturdays / first monthly weekend day; no weekday selection.
 # Changing cloud trigger times requires applying schedules with cron-job.org.

@@ -122,6 +122,28 @@ class CloudRepository:
             raise CloudConfigError('GitHub configuration is invalid. No cloud changes were written.') from None
         return {'config': clean, 'raw': raw, 'sha': sha}
 
+    def save_scheduler_trigger(self, base_trigger, desired_trigger):
+        """Restricted single-field write: the scheduler trigger, nothing else."""
+        if desired_trigger not in ("native", "cron-job.org"):
+            raise CloudConfigError('scheduler.trigger must be native or cron-job.org.')
+        latest = self.read_config()
+        current = latest['config'].get('scheduler', {}).get('trigger', 'native')
+        if desired_trigger == current:
+            return {'config': latest['config'], 'changed': False}
+        if base_trigger != current:
+            raise CloudConfigError('Schedule trigger changed elsewhere. Reload the latest configuration before saving.')
+        raw = deepcopy(latest['raw'])
+        if desired_trigger == 'native':
+            raw.pop('scheduler', None)
+        else:
+            raw['scheduler'] = {'trigger': desired_trigger}
+        clean = validate_config(raw)
+        text = yaml.safe_dump(raw, sort_keys=False, allow_unicode=True)
+        self._request('PUT', 'contents/config.yaml', {'branch': 'main', 'sha': latest['sha'],
+                      'message': 'chore: update StockWatch schedule trigger from dashboard [skip ci]',
+                      'content': base64.b64encode(text.encode('utf-8')).decode('ascii')})
+        return {'config': clean, 'changed': True}
+
     def save_watchlist(self, base, desired):
         # Reject malformed data before making any write. No non-watchlist input
         # is accepted by this interface, including transaction or report settings.

@@ -4,6 +4,7 @@ import argparse
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
+import re
 from zoneinfo import ZoneInfo
 
 
@@ -14,6 +15,30 @@ UTC_SCHEDULES = {
     "53 22 * * 1-5": ("CLOSE", -4),
     "53 23 * * 1-5": ("CLOSE", -5),
 }
+
+EXTERNAL_TRIGGER = "cron-job.org"
+
+
+def configured_trigger(path: Path) -> str:
+    """Read scheduler.trigger from the config without a YAML dependency (native by default)."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return "native"
+    in_section = False
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not line[0].isspace():
+            if in_section:
+                break  # A new top-level key ends the scheduler section.
+            in_section = stripped.split(":", 1)[0] == "scheduler" and stripped.endswith(":")
+        elif in_section:
+            match = re.match(r"trigger:\s*(native|cron-job\.org)\b", stripped)
+            if match:
+                return match.group(1)
+    return "native"
 
 
 def scheduled_mode(cron: str, now: datetime) -> str | None:
@@ -61,6 +86,11 @@ def main() -> int:
     args = parser.parse_args()
     now = datetime.now(timezone.utc)
     mode = scheduled_mode(args.cron, now) if args.cron else args.mode
+    if mode and args.cron and configured_trigger(args.config) == EXTERNAL_TRIGGER:
+        # The dashboard scheduler switch owns the native slots; external dispatches
+        # and manual runs are never gated by this.
+        print("Native slot skipped: config scheduler.trigger is cron-job.org.")
+        mode = None
     if mode and args.scheduled:
         import yaml
         config = yaml.safe_load(args.config.read_text(encoding="utf-8"))

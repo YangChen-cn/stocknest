@@ -64,3 +64,34 @@ def test_invalid_schedule_fails_closed():
         scheduled_mode("0 19 * * 1-5", datetime.fromisoformat("2026-10-01T23:00:00+00:00"))
     with pytest.raises(ValueError):
         scheduled_mode("53 22 * * 1-5", datetime(2026, 10, 1))
+
+
+def test_scheduler_trigger_skips_only_native_slots(tmp_path, monkeypatch):
+    import stockwatch.schedule as schedule
+    external = tmp_path / "external.yaml"
+    external.write_text("portfolio:\n  language: en\nscheduler:\n  trigger: cron-job.org\n", encoding="utf-8")
+    nested = tmp_path / "nested.yaml"
+    nested.write_text("reports:\n  trigger: cron-job.org\n", encoding="utf-8")
+    assert schedule.configured_trigger(external) == "cron-job.org"
+    assert schedule.configured_trigger(nested) == "native"  # Only the top-level key counts.
+    assert schedule.configured_trigger(tmp_path / "missing.yaml") == "native"
+
+    class FixedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.fromisoformat("2026-10-01T17:00:00+00:00").astimezone(tz)
+    monkeypatch.setattr(schedule, "datetime", FixedClock)
+    output = tmp_path / "output"
+    monkeypatch.setattr(sys, "argv", ["schedule", "--cron", "23 14 * * 1-5", "--config", str(external), "--github-output", str(output)])
+    assert schedule.main() == 0
+    assert "should_run=false" in output.read_text()
+    manual = tmp_path / "manual"
+    monkeypatch.setattr(sys, "argv", ["schedule", "--mode", "CLOSE", "--config", str(external), "--github-output", str(manual)])
+    assert schedule.main() == 0  # Manual dispatches ignore the switch entirely.
+    assert manual.read_text() == "should_run=true\nmode=CLOSE\n"
+    native = tmp_path / "native.yaml"
+    native.write_text("watchlist: {}\n", encoding="utf-8")
+    native_out = tmp_path / "native_out"
+    monkeypatch.setattr(sys, "argv", ["schedule", "--cron", "23 14 * * 1-5", "--config", str(native), "--github-output", str(native_out)])
+    assert schedule.main() == 0
+    assert "should_run=true" in native_out.read_text()

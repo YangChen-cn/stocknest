@@ -166,3 +166,17 @@ def test_nested_alert_changes_merge_but_conflicting_deletion_stops():
     assert merge_watchlist(base, desired, current)['XYZ']['alerts'] == {'below': 11, 'daily_move_pct': 7}
     with pytest.raises(CloudConfigError):
         merge_watchlist(base, {'XYZ': {}}, current)
+
+
+def test_scheduler_trigger_single_field_cloud_write():
+    raw = {'portfolio': {'language': 'en'}, 'watchlist': {'XYZ': {'thesis': 'Note'}}}
+    fake = FakeGitHub(deepcopy(raw))
+    result = repository(fake).save_scheduler_trigger('native', 'cron-job.org')
+    assert result['changed'] and fake.raw['scheduler'] == {'trigger': 'cron-job.org'}
+    assert fake.raw['watchlist']['XYZ'] == {'thesis': 'Note'}  # Other sections ride along untouched.
+    assert not repository(fake).save_scheduler_trigger('cron-job.org', 'cron-job.org')['changed']
+    fake.raw['scheduler'] = {'trigger': 'native'}  # Changed elsewhere after the draft was opened.
+    with pytest.raises(CloudConfigError, match='elsewhere'):
+        repository(fake).save_scheduler_trigger('cron-job.org', 'cron-job.org')
+    with pytest.raises(CloudConfigError, match='native or cron-job.org'):
+        repository(fake).save_scheduler_trigger('native', 'hourly')

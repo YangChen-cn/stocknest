@@ -48,7 +48,10 @@ concurrency:
 
 jobs:
   daily:
-    if: github.ref == 'refs/heads/main' && github.event.repository.private == true && (github.event_name != 'schedule' || vars.STOCKWATCH_SCHEDULER != 'cron-job.org')
+    # The config scheduler trigger (native / cron-job.org) owns the native slots:
+    # the preflight skips scheduled slots while external triggers are selected.
+    # Manual dispatches are never gated, so switching back is always possible.
+    if: github.ref == 'refs/heads/main' && github.event.repository.private == true
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

@@ -334,6 +334,18 @@ ZH.update({
 
 ZH.update({
     "Config supports portfolio, watchlist, notifications and imports only.": "配置仅支持 portfolio、watchlist、notifications 和 imports。",
+    "Config supports portfolio, watchlist, notifications, imports, reports and scheduler only.": "配置仅支持 portfolio、watchlist、notifications、imports、reports 和 scheduler。",
+    "scheduler supports trigger only.": "scheduler 仅支持 trigger 字段。",
+    "scheduler.trigger must be native or cron-job.org.": "scheduler.trigger 只支持 native 或 cron-job.org。",
+    "Schedule trigger": "调度方式",
+    "GitHub Actions schedule": "GitHub 自带定时",
+    "External cron-job.org triggers": "cron-job.org 外部触发",
+    "While external triggers are selected, GitHub's native schedule slots are skipped. Switch back if the external jobs are removed.": "选择外部触发后，GitHub 原生定时槽位将自动跳过；删除外部任务后请切换回自带定时。",
+    "Save schedule trigger": "保存调度方式",
+    "Schedule trigger saved locally. Sync with GitHub to apply it to scheduled reports.": "调度方式已保存到本机；同步到 GitHub 后定时报告才会采用。",
+    "Schedule trigger saved to GitHub; the next scheduled run uses it.": "调度方式已保存到 GitHub；下一次定时运行即生效。",
+    "No new changes. GitHub already has this trigger.": "没有变更：GitHub 已是该调度方式。",
+    "Schedule trigger changed elsewhere. Reload the latest configuration before saving.": "调度方式已在其他位置修改，保存已停止。请先重新载入最新配置再重试。",
     "imports supports hsbc only.": "交易导入目前仅支持汇丰邮件。",
     "Invalid HSBC import settings.": "汇丰导入设置无效。",
     "HSBC import switches must be true or false.": "汇丰导入开关必须为 true 或 false。",

@@ -30,10 +30,19 @@ def test_invalid_csv_shapes(tmp_path, content):
                                  {"watchlist": {"X": {"alerts": {"below": "1e999"}}}},
                                  {"watchlist": {"X": {"alerts": {"below": "1e-999"}}}},
                                  {"watchlist": {"X": {"password": "secret"}}},
-                                 {"watchlist": {"x": {}, "X": {}}}])
+                                 {"watchlist": {"x": {}, "X": {}}},
+                                 {"scheduler": {"trigger": "hourly"}},
+                                 {"scheduler": {"trigger": "native", "time": "10:23"}},
+                                 {"scheduler": []}])
 def test_invalid_configs(raw):
     with pytest.raises(ValidationError):
         validate_config(raw)
+
+
+def test_scheduler_trigger_normalization():
+    assert validate_config({"scheduler": {"trigger": "cron-job.org"}})["scheduler"] == {"trigger": "cron-job.org"}
+    assert "scheduler" not in validate_config({"scheduler": {"trigger": "native"}})
+    assert "scheduler" not in validate_config({})
 
 
 def test_config_roundtrip_and_invalid_save_preserves_original(tmp_path):

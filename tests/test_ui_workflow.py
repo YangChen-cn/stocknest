@@ -215,8 +215,10 @@ def test_workflow_permissions_schedule_and_file_whitelist():
         assert next(step for step in steps if step["name"] == name)["if"] == "steps.configured.outputs.should_run == 'true'"
     assert "inputs.scheduled" in command["env"]["SCHEDULED"]
     assert workflow["on"]["workflow_dispatch"]["inputs"]["scheduled"]["default"] == "false"
-    assert "vars.STOCKWATCH_SCHEDULER" in workflow["jobs"]["daily"]["if"]
+    # The dashboard scheduler switch (config.scheduler.trigger) owns the native slots;
+    # a repository variable would fight it, so the workflow never reads one.
     assert "github.event.repository.private == true" in workflow["jobs"]["daily"]["if"]
+    assert "vars.STOCKWATCH_SCHEDULER" not in workflow["jobs"]["daily"]["if"]
     persistence = next(step["run"] for step in steps if step["name"] == "Validate and persist notification state")
     assert "git add -f -- data/state.json" in persistence and "git add ." not in persistence
     assert "chore: update StockWatch state [skip ci]" in persistence
@@ -399,11 +401,18 @@ def test_report_settings_save_and_demo_read_only(app):
     assert "days" not in config["reports"]["WEEKLY"]
     assert not any(widget.key in ("report_WEEKLY_days", "report_MONTHLY_days") for widget in app_test.selectbox)
     assert [widget.key for widget in app_test.multiselect if widget.key.startswith("report_")] == ["report_INTRADAY_days", "report_CLOSE_days"]
+    # The scheduler switch saves independently of the report-schedule form.
+    assert next(box for box in app_test.selectbox if box.key == "scheduler_trigger").value == "native"
+    next(box for box in app_test.selectbox if box.key == "scheduler_trigger").set_value("cron-job.org").run()
+    next(button for button in app_test.button if button.label == "Save schedule trigger").click().run()
+    assert not app_test.exception
+    assert load_config(root / "config.yaml")["scheduler"] == {"trigger": "cron-job.org"}
     app_test.sidebar.radio[0].set_value("Settings").run()
     assert not app_test.exception
     app_test.sidebar.toggle[0].set_value(True).run()
     assert not app_test.exception
     assert next(button for button in app_test.button if button.label == "Save report schedules").disabled
+    assert next(button for button in app_test.button if button.label == "Save schedule trigger").disabled
 
 
 def test_dashboard_hides_streamlit_developer_toolbar(app):
@@ -547,6 +556,10 @@ def cloud_app(app, monkeypatch):
             remote['watchlist'] = merge_watchlist(base, desired, remote['watchlist'])
             writes.append(deepcopy(remote))
             return {'config': deepcopy(remote), 'changed': True}
+        def save_scheduler_trigger(self, base, desired):
+            remote['scheduler'] = {'trigger': desired}
+            writes.append(deepcopy(remote))
+            return {'config': deepcopy(remote), 'changed': True}
     monkeypatch.setattr(ui, 'cloud_config', read)
     monkeypatch.setattr(ui_cloud, 'cloud_config', read)
     monkeypatch.setattr(ui_cloud, 'CloudRepository', Repo)
@@ -598,17 +611,26 @@ def test_cloud_holding_notes_enabled_other_writes_disabled_and_demo_safe(cloud_a
     next(w for w in app_test.text_area if w.label == 'Thesis').set_value('Holding note')
     next(b for b in app_test.button if b.label == 'Save holding notes').click().run()
     assert not app_test.exception and remote['watchlist']['XYZ']['thesis'] == 'Holding note'
-    assert len(writes) == 1 and (root / 'config.yaml').read_bytes() == before
+    # Local checkout stays untouched; both cloud writes land on GitHub.
+    assert (root / 'config.yaml').read_bytes() == before
     app_test.sidebar.radio[0].set_value('Transactions').run()
     assert next(b for b in app_test.button if b.label == 'Save transactions').disabled
     app_test.sidebar.radio[0].set_value('Settings').run()
     for label in ('Save settings', 'Sync with GitHub', 'Enable cloud daily workflow', 'Save report schedules'):
         assert next(b for b in app_test.button if b.label == label).disabled
+    # The scheduler switch is exactly the field cloud editing is for.
+    trigger = next(w for w in app_test.selectbox if w.key == 'scheduler_trigger')
+    assert trigger.value == 'native' and not next(b for b in app_test.button if b.label == 'Save schedule trigger').disabled
+    trigger.set_value('cron-job.org').run()
+    next(b for b in app_test.button if b.label == 'Save schedule trigger').click().run()
+    assert not app_test.exception and remote['scheduler'] == {'trigger': 'cron-job.org'}
+    assert any('已保存到 GitHub' in s.value or 'saved to GitHub' in s.value for s in app_test.success)
+    assert len(writes) == 2
     app_test.sidebar.toggle[0].set_value(True).run()
     app_test.sidebar.radio[0].set_value('Watchlist & Alerts').run()
     assert not app_test.exception
     assert next(b for b in app_test.button if b.label == 'Save watchlist').disabled
-    assert len(writes) == 1
+    assert len(writes) == 2  # Demo mode adds no further cloud writes.
 
 
 def test_cloud_auth_failure_falls_back_to_readonly(cloud_app):

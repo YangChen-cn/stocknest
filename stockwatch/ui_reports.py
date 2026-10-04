@@ -8,9 +8,40 @@ from stockwatch.git_sync import SyncError, sync
 from stockwatch.i18n import error_message, t
 from stockwatch.report_settings import MODES, PERIODIC, report_settings
 from stockwatch.storage import ValidationError, load_config, save_config
+from stockwatch import ui_cloud
 
 LABELS = {"INTRADAY": "Intraday brief", "CLOSE": "Closing report", "WEEKLY": "Weekly report", "MONTHLY": "Monthly report"}
 DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday")
+TRIGGERS = ("native", "cron-job.org")
+
+
+def save_trigger(path, current, desired, *, readonly):
+    """Local save, or a direct repository write when cloud editing is enabled."""
+    if readonly:
+        from stockwatch.i18n import t as translate
+        language = st.session_state.get('_stockwatch_language', 'en')
+        try:
+            result = ui_cloud.CloudRepository(ui_cloud.CloudSettings.from_environment()).save_scheduler_trigger(
+                current.get("scheduler", {}).get("trigger", "native"), desired)
+        except ui_cloud.CloudConfigError as exc:
+            st.error(error_message(exc, language))
+            return
+        st.session_state['_report_settings_signature'] = None
+        message = ("Schedule trigger saved to GitHub; the next scheduled run uses it."
+                   if result["changed"] else "No new changes. GitHub already has this trigger.")
+        st.success(translate(message, language))
+        return
+    try:
+        latest = load_config(path)
+        if desired == "native":
+            latest.pop("scheduler", None)
+        else:
+            latest["scheduler"] = {"trigger": desired}
+        save_config(path, latest)
+        st.session_state['_stockwatch_notice'] = "Schedule trigger saved locally. Sync with GitHub to apply it to scheduled reports."
+        st.rerun()
+    except (ValidationError, OSError) as exc:
+        st.error(error_message(exc, st.session_state.get('_stockwatch_language', 'en')))
 
 
 def report_controls(path, config, demo, root, readonly=False):
@@ -20,12 +51,22 @@ def report_controls(path, config, demo, root, readonly=False):
     with st.expander(tr("Report schedules"), expanded=False):
         st.caption(tr("Daily times use New York time with automatic DST; weekly/monthly times use Hong Kong time."))
         settings = report_settings(config.get('reports'))
-        signature = (str(settings), demo)
+        current_trigger = config.get('scheduler', {}).get('trigger', 'native')
+        signature = (str(settings), demo, current_trigger)
         if st.session_state.get('_report_settings_signature') != signature:
             for mode in MODES:
                 for field in ('enabled', 'time', 'days'):
                     st.session_state.pop(f'report_{mode}_{field}', None)
+            st.session_state.pop('scheduler_trigger', None)
             st.session_state['_report_settings_signature'] = signature
+        trigger_labels = {"native": tr("GitHub Actions schedule"), "cron-job.org": tr("External cron-job.org triggers")}
+        trigger = st.selectbox(tr("Schedule trigger"), list(TRIGGERS), index=TRIGGERS.index(current_trigger),
+                               format_func=trigger_labels.__getitem__, key="scheduler_trigger",
+                               help=tr("While external triggers are selected, GitHub's native schedule slots are skipped. Switch back if the external jobs are removed."))
+        trigger_col, _ = st.columns([1, 2])
+        if trigger_col.button(tr("Save schedule trigger"), disabled=demo or (readonly and not ui_cloud.editing_ready()),
+                              key="save_scheduler_trigger"):
+            save_trigger(path, config, trigger, readonly=readonly)
         with st.form('report_schedules'):
             updated = {}
             for mode in MODES:

@@ -136,18 +136,26 @@ def save_transactions(path: Path, rows: list[dict]) -> None:
 
 
 def validate_config(raw: Any) -> dict:
-    if not isinstance(raw, dict) or set(raw) - {"portfolio", "watchlist", "notifications", "imports", "reports"}:
-        raise ValidationError("Config supports portfolio, watchlist, notifications, imports and reports only.")
+    if not isinstance(raw, dict) or set(raw) - {"portfolio", "watchlist", "notifications", "imports", "reports", "scheduler"}:
+        raise ValidationError("Config supports portfolio, watchlist, notifications, imports, reports and scheduler only.")
     portfolio = raw.get("portfolio", {})
     if not isinstance(portfolio, dict) or set(portfolio) - {"base_currency", "language", "benchmark"} or portfolio.get("base_currency", "USD") != "USD":
         raise ValidationError("Only portfolio.base_currency: USD is supported.")
     lang = portfolio.get("language", "en")
     if not isinstance(lang, str) or lang not in LANGUAGES:
         raise ValidationError("Language must be zh-CN or en.")
+    scheduler = raw.get("scheduler", {})
+    if not isinstance(scheduler, dict) or set(scheduler) - {"trigger"}:
+        raise ValidationError("scheduler supports trigger only.")
+    trigger = scheduler.get("trigger", "native")
+    if trigger not in ("native", "cron-job.org"):
+        raise ValidationError("scheduler.trigger must be native or cron-job.org.")
     watchlist = raw.get("watchlist", {})
     if not isinstance(watchlist, dict):
         raise ValidationError("watchlist must map symbols to settings.")
     clean = {"portfolio": {"base_currency": "USD", "language": lang}, "watchlist": {}}
+    if trigger != "native":
+        clean["scheduler"] = {"trigger": trigger}
     if "benchmark" in portfolio:
         clean["portfolio"]["benchmark"] = ticker(portfolio["benchmark"])
     if "reports" in raw:
