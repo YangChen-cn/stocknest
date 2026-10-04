@@ -336,3 +336,8 @@ The dashboard and all four email reports share a warm, restrained layout. Holdin
 Small record notes use existing transactions/history. A confirmed NAV high requires continuous, current history; missing or stale data never earns a new-high message. Intraday estimates are explicitly labelled. High-water-mark distance remains on Performance, while short original closing lines add context without forecasts or trading advice. Zero and unavailable values stay neutral. No additional market requests, dependencies or configuration are required.
 
 [Preview the redesigned daily email](docs/images/daily-email-demo.png) (synthetic Demo data).
+
+
+### Hosted read-only dashboard
+
+Deploy your own private copy to Streamlit Community Cloud and restrict viewer access to your email. Online Yahoo quotes remain the first choice; the hosted worker loads only the existing yfinance dependency. If online data fails, the dashboard uses a dated Actions market snapshot with an explicit non-live notice. Refresh retries online data. See the [cloud deployment guide](docs/cloud-dashboard.md) for setup and recovery. Market snapshots stay in your private repository and never update mail or alert state.

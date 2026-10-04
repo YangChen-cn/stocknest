@@ -11,6 +11,7 @@ import math
 import subprocess
 import sys
 import time
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
@@ -107,8 +108,10 @@ def quote_from_intraday(symbol: str, bars: list[dict], history: pd.DataFrame,
 
 
 class OpenBBProvider:
-    def __init__(self, timeout: float = 45, attempts: int = 2):
+    def __init__(self, timeout: float = 45, attempts: int = 2, *, lightweight: bool = False):
         self.timeout = timeout
+        self.lightweight = lightweight
+        self.source = "Yahoo / yfinance" if lightweight else "OpenBB / yfinance"
         self.attempts = attempts
         self._history_cache = {}
 
@@ -119,19 +122,25 @@ class OpenBBProvider:
         now = now or datetime.now(timezone.utc)
         if active_session(now) != session:
             return Quote(symbol, session=session, error="Data unavailable: no active NYSE session")
-        payload = json.dumps({"operation": "intraday", "symbol": symbol, "session": session.isoformat()})
+        payload = json.dumps({"operation": "intraday", "symbol": symbol, "session": session.isoformat(), "lightweight": self.lightweight})
         for attempt in range(self.attempts):
             try:
                 result = subprocess.run([sys.executable, "-m", "stockwatch.providers.worker"], input=payload,
                                         text=True, capture_output=True, timeout=self.timeout)
+                if result.returncode != 0:
+                    raise DataUnavailable(provider_failure(None, result.returncode))
                 response = json.loads(result.stdout.strip().splitlines()[-1])
-                if result.returncode != 0 or "error" in response:
-                    raise DataUnavailable("Provider failed")
-                return quote_from_intraday(symbol, response["bars"], normalize_history(response["history"]), session, now)
-            except (subprocess.TimeoutExpired, ValueError, IndexError, KeyError, TypeError, OSError, DataUnavailable):
+                if "error" in response:
+                    raise DataUnavailable(provider_failure(response.get("error")))
+                history = normalize_history(response["history"])
+                self._history_cache[(symbol, session - timedelta(days=380), session)] = history
+                return replace(quote_from_intraday(symbol, response["bars"], history, session, now), source=self.source)
+            except (subprocess.TimeoutExpired, ValueError, IndexError, KeyError, TypeError, OSError, DataUnavailable) as exc:
+                failure = "Provider request timed out" if isinstance(exc, subprocess.TimeoutExpired) else str(exc) if isinstance(exc, DataUnavailable) else "Provider returned no usable data"
+                logger.warning("%s: intraday provider failure=%s attempt=%s/%s", symbol, failure, attempt + 1, self.attempts)
                 if attempt + 1 < self.attempts:
                     time.sleep(1)
-        return Quote(symbol, session=session, error="Data unavailable: intraday prices missing or stale")
+        return Quote(symbol, session=session, error=f"Data unavailable: {failure}")
 
     def search(self, query: str) -> list[Instrument]:
         query = query.strip()
@@ -158,7 +167,7 @@ class OpenBBProvider:
                 selected = frame[(frame.date >= start) & (frame.date < end)].copy()
                 if required_session is None or required_session in set(selected.date):
                     return selected
-        payload = json.dumps({"symbol": symbol, "start": start.isoformat(), "end": end.isoformat()})
+        payload = json.dumps({"symbol": symbol, "start": start.isoformat(), "end": end.isoformat(), "lightweight": self.lightweight})
         error = "Provider failed"
         partial = None
         for attempt in range(self.attempts):
@@ -166,11 +175,11 @@ class OpenBBProvider:
                 completed = subprocess.run([sys.executable, "-m", "stockwatch.providers.worker"],
                                            input=payload, text=True, capture_output=True, timeout=self.timeout)
                 if completed.returncode != 0:
-                    raise DataUnavailable("Provider worker failed")
-                # OpenBB may emit startup messages; only the final protocol line is read.
+                    raise DataUnavailable(provider_failure(None, completed.returncode))
+                # Only sanitized worker protocol data is read, never raw stderr.
                 response = json.loads(completed.stdout.strip().splitlines()[-1])
                 if "error" in response:
-                    raise DataUnavailable(response["error"])
+                    raise DataUnavailable(provider_failure(response["error"]))
                 frame = normalize_history(response["data"])
                 if required_session is not None and required_session not in set(frame.date):
                     partial = frame
@@ -181,8 +190,9 @@ class OpenBBProvider:
                     continue
                 self._history_cache[(symbol, start, end)] = frame
                 return frame
-            except (subprocess.TimeoutExpired, ValueError, IndexError, DataUnavailable) as exc:
-                error = "Provider request timed out" if isinstance(exc, subprocess.TimeoutExpired) else "Provider returned no usable data"
+            except (subprocess.TimeoutExpired, ValueError, IndexError, KeyError, TypeError, OSError, DataUnavailable) as exc:
+                error = "Provider request timed out" if isinstance(exc, subprocess.TimeoutExpired) else str(exc) if isinstance(exc, DataUnavailable) else "Provider returned no usable data"
+                logger.warning("%s: provider failure=%s attempt=%s/%s", symbol, error, attempt + 1, self.attempts)
                 if attempt + 1 < self.attempts:
                     time.sleep(1)
         if partial is not None:
@@ -196,9 +206,9 @@ class OpenBBProvider:
         try:
             # End dates are exclusive in yfinance; include the entire target session.
             frame = self._request(symbol, day - timedelta(days=380), day + timedelta(days=1), required_session=day)
-            return quote_from_history(symbol, frame, day)
+            return quote_from_history(symbol, frame, day, source=self.source)
         except DataUnavailable as exc:
-            return Quote(symbol, session=day, error=f"Data unavailable: {exc}")
+            return Quote(symbol, session=day, source=self.source, error=f"Data unavailable: {exc}")
 
     def get_history(self, symbol: str, period: str, as_of: date | None = None) -> pd.DataFrame:
         if period not in PERIODS:
@@ -219,6 +229,56 @@ class OpenBBProvider:
         return frame[(frame.date >= start) & (frame.date <= end)].reset_index(drop=True)
 
 
+def provider_failure(code, returncode=0):
+    if returncode < 0:
+        return "Provider worker killed (resource or process limit)"
+    return {"rate_limited": "Provider rate limited", "timeout": "Provider request timed out",
+            "network": "Provider network error", "dependency": "Provider dependency unavailable",
+            "no_data": "Provider returned no usable data"}.get(code, "Provider returned no usable data")
+
+
+def failure_code(exc):
+    """Classify without emitting upstream text, URLs or credentials."""
+    text = str(exc).lower()
+    names = type(exc).__name__.lower()
+    if "ratelimit" in names or "too many requests" in text or "rate limit" in text or "429" in text:
+        return "rate_limited"
+    if "timeout" in names or "timed out" in text:
+        return "timeout"
+    if isinstance(exc, (ImportError, ModuleNotFoundError)):
+        return "dependency"
+    if "connection" in names or "resolve host" in text or "network" in text:
+        return "network"
+    return "no_data"
+
+
+def lightweight_request(payload):
+    """Yahoo data without loading the full OpenBB runtime in a second UI process.
+
+    auto_adjust=False matches OpenBB splits_only: Yahoo prices include split
+    adjustments, while dividends are not reinvested or back-adjusted.
+    """
+    import yfinance as yf
+    instrument = yf.Ticker(payload['symbol'])
+
+    def rows(start, end, interval):
+        frame = instrument.history(start=start, end=end, interval=interval, auto_adjust=False,
+                                   back_adjust=False, actions=True, prepost=False, timeout=12, raise_errors=True)
+        if frame.empty:
+            raise DataUnavailable('No historical daily data')
+        frame = frame.reset_index().rename(columns={'Date': 'date', 'Datetime': 'date', 'Open': 'open',
+            'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume', 'Stock Splits': 'split_ratio'})
+        # Daily dates are exchange dates, not UTC-midnight conversions.
+        frame['date'] = frame['date'].map(lambda value: value.isoformat() if interval != '1d' else value.date().isoformat())
+        return json.loads(frame.to_json(orient='records'))
+
+    if payload.get('operation') == 'intraday':
+        day = date.fromisoformat(payload['session'])
+        return {'bars': rows(day, day + timedelta(days=1), '1m'),
+                'history': rows(day - timedelta(days=380), day, '1d')}
+    return {'data': rows(payload['start'], payload['end'], '1d')}
+
+
 def execute_request(payload: dict) -> dict:
     """Executed only in an isolated worker; no secrets are passed to this worker."""
     if payload.get("operation") == "search":
@@ -227,6 +287,8 @@ def execute_request(payload: dict) -> dict:
         result = yf.Search(payload["query"], max_results=15, news_count=0, lists_count=0,
                            recommended=0, timeout=12)
         return {"data": result.quotes}
+    if payload.get("lightweight"):
+        return lightweight_request(payload)
     from openbb import obb
 
     if payload.get("operation") == "intraday":

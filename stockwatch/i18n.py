@@ -395,6 +395,16 @@ def t(message: str, lang: str = "en", **values) -> str:
     return template.format(**values) if values else template
 
 
+ZH.update({
+    "Saved market snapshot from {time} ({mode}, {date}); these prices are not live. Transactions after that date are excluded when the whole portfolio falls back.": "已保存行情：{time}（{mode}，美股日期 {date}），并非实时价格。整组回退时，仅计入该日期及以前的交易。",
+    "Online quotes are attempted first (Yahoo via yfinance); saved Actions data is a dated fallback. Refresh retries online data.": "优先读取 Yahoo 在线行情；失败时使用标明时间的 Actions 快照。点击刷新会重新尝试在线行情。",
+    "Data unavailable: Provider rate limited": "Yahoo 请求被限流，请稍后重试。",
+    "Data unavailable: Provider request timed out": "行情请求超时，请稍后重试。",
+    "Data unavailable: Provider worker killed (resource or process limit)": "行情进程被终止，可能触及云端资源或进程限制。",
+    "Data unavailable: Provider dependency unavailable": "行情依赖未能加载，请检查部署日志。",
+    "Data unavailable: Provider network error": "行情网络连接失败，请稍后重试。",
+})
+
 def data_status(message: str | None, lang: str) -> str:
     message = message or "Data unavailable"
     if lang == "zh-CN" and message not in ZH:

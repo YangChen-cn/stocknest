@@ -15,7 +15,7 @@ from stockwatch.i18n import error_message, language, t
 from stockwatch.imports.gmail import sync_hsbc
 from stockwatch.imports.hsbc import HSBCSyncError
 from stockwatch.notifications.email import EmailDeliveryError, EmailSettings, send_report
-from stockwatch.providers.base import MarketDataProvider
+from stockwatch.providers.base import DataUnavailable, MarketDataProvider
 from stockwatch.providers.demo import DemoProvider
 from stockwatch.providers.openbb_provider import OpenBBProvider
 from stockwatch.performance import DEFAULT_BENCHMARK, update_history, load_history, fingerprint
@@ -32,7 +32,8 @@ def run(*, config_path: Path, transactions_path: Path, state_path: Path, output_
         now: datetime | None = None, performance_path: Path | None = None,
         rebuild_performance: bool = False, close_attempts: int = 3, close_retry_seconds: float = 120,
         sleeper: Callable = time.sleep, importer: Callable = sync_hsbc,
-        import_state_path: Path | None = None, delivery_day: date | None = None) -> int:
+        import_state_path: Path | None = None, delivery_day: date | None = None,
+        market_snapshot_path: Path | None = None) -> int:
     session_key = report_session_key(mode) if mode in ("CLOSE", "INTRADAY") else f"last_{mode.lower()}_session"
     now = now or datetime.now(timezone.utc)
     config = load_config(config_path)
@@ -87,6 +88,13 @@ def run(*, config_path: Path, transactions_path: Path, state_path: Path, output_
         if attempt < attempts:
             logger.info(t("Retrying close data in {seconds:g} seconds; no email or alert state consumed", lang, seconds=close_retry_seconds))
             sleeper(close_retry_seconds)
+    if market_snapshot_path is not None and not (dry_run or demo):
+        from stockwatch.market_snapshot import save_snapshot
+        try:
+            save_snapshot(market_snapshot_path, provider, quotes, session, mode, now=now)
+        except (DataUnavailable, ValueError, OSError) as exc:
+            logger.warning('Market snapshot save failed (%s); previous file preserved', type(exc).__name__)
+
     if mode == "CLOSE" and missing and not (dry_run or demo) and mail_enabled and settings and not (sent_before and not force_send):
         report = render_failure(session, "Close data remains unavailable; the daily report was not sent.", missing, attempts, lang)
         return deliver_failure(report, state, state_path, output_dir, session, "last_close_error_session", settings, sender)
@@ -176,6 +184,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--output-dir", type=Path, default=ROOT / "outputs")
     result.add_argument("--log-dir", type=Path, default=ROOT / "logs")
     result.add_argument("--performance", type=Path, default=ROOT / "data/performance.json")
+    result.add_argument("--market-snapshot", type=Path, default=ROOT / "data/market_snapshot.json")
     result.add_argument("--rebuild-performance", action="store_true", help="重新回补已完成 session 的持仓历史")
     result.add_argument("--close-attempts", type=int, choices=range(1, 4), default=3)
     result.add_argument("--close-retry-seconds", type=int, metavar="SECONDS", choices=range(60, 181), default=120,
@@ -235,7 +244,7 @@ def main(argv: list[str] | None = None) -> int:
                    state_path=args.state, output_dir=args.output_dir, provider=provider, session=session,
                    dry_run=args.dry_run, force_send=args.force_send, demo=args.demo, mode=args.mode, now=now, performance_path=args.performance,
                    delivery_day=(provider.session if args.demo else now.astimezone(report_timezone(args.mode)).date()) if args.mode in ("WEEKLY", "MONTHLY") else None,
-                   rebuild_performance=args.rebuild_performance, close_attempts=args.close_attempts,
+                   market_snapshot_path=args.market_snapshot, rebuild_performance=args.rebuild_performance, close_attempts=args.close_attempts,
                    close_retry_seconds=args.close_retry_seconds, import_state_path=args.import_state,
                    **({"importer": lambda *a, **kw: {"disabled": True}} if args.skip_hsbc else {}))
     except (ValidationError, OSError, ValueError) as exc:

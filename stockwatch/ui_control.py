@@ -21,7 +21,7 @@ def localized_error(error):
 
 def gmail_controls(demo, ROOT, readonly=False):
     st.caption(text("Cloud Gmail uses GitHub Actions Secrets. Local Gmail is optional and does not indicate cloud health."))
-    if st.button(text("Check cloud Gmail Secrets"), disabled=demo):
+    if st.button(text("Check cloud Gmail Secrets"), disabled=demo or readonly):
         try:
             st.session_state["_cloud_gmail_status"] = cloud_email_status(ROOT)
         except ControlError:
@@ -72,7 +72,7 @@ def control_center(path, config, demo, ROOT, hsbc_control, email_control, readon
             except (SyncError, ValidationError) as exc:
                 st.error(localized_error(exc))
         st.markdown(f"**{text('GitHub Actions')}**")
-        if st.button(text("Refresh workflow status"), disabled=demo):
+        if st.button(text("Refresh workflow status"), disabled=demo or readonly):
             try:
                 st.session_state["_workflow_status"] = workflow_status(ROOT)
             except ControlError as exc:
@@ -119,7 +119,7 @@ def control_center(path, config, demo, ROOT, hsbc_control, email_control, readon
                 actions = ("Enable login startup", "Stop service", "Disable login startup")
                 funcs = (install_service, stop_service, uninstall_service)
                 for column, label, function in zip(cols, actions, funcs):
-                    if column.button(text(label), disabled=demo or label == "Stop service" and not local["loaded"]):
+                    if column.button(text(label), disabled=demo or readonly or label == "Stop service" and not local["loaded"]):
                         function(ROOT)
                         st.success(text("Service setting updated. Refresh the page to see its status."))
             else:

@@ -5,6 +5,7 @@ on:
     paths-ignore:
       - data/state.json
       - data/performance.json
+      - data/market_snapshot.json
       - data/transactions.csv
       - data/hsbc_imports.json
   pull_request:

@@ -475,3 +475,42 @@ def test_dashboard_deltas_and_all_time_high_caption(app, monkeypatch):
     daily = next(metric for metric in app_test.metric if metric.label == "Daily P/L")
     assert daily.delta == "-10.00%"
     assert not any("all-time high" in caption.value for caption in app_test.caption)
+
+
+def test_hosted_dashboard_saved_quotes_export_and_no_control_warning(app, monkeypatch):
+    from datetime import date, datetime, timezone
+    from unittest.mock import Mock
+    import json
+    import pandas as pd
+    from stockwatch import ui
+    from stockwatch.market_snapshot import save_snapshot
+    from stockwatch.providers.base import Quote
+    from stockwatch.providers.hosted import HostedProvider
+    app_test, root = app
+    day = date(2026, 10, 2)
+    save_transactions(root / 'data/transactions.csv', [
+        {'date': '2026-09-29', 'symbol': 'XYZ', 'side': 'BUY', 'shares': '1', 'price': '10', 'note': ''}])
+    history_provider = Mock()
+    history_provider.get_history_range.return_value = pd.DataFrame([
+        {'date': day.date(), 'close': 11., 'high': 12., 'low': 9., 'split_ratio': 0.}
+        for day in pd.bdate_range('2025-09-15', '2026-10-02')])
+    save_snapshot(root / 'data/market_snapshot.json', history_provider,
+                  {'XYZ': Quote('XYZ', price=11, previous_close=10, session=day)}, day, 'CLOSE',
+                  now=datetime(2026, 10, 2, 22, tzinfo=timezone.utc))
+    online = Mock()
+    online.get_quote.return_value = Quote('XYZ', session=day, error='Data unavailable: Provider rate limited')
+    monkeypatch.setenv('STOCKWATCH_READONLY', '1')
+    monkeypatch.setattr(ui, 'ui_provider', lambda demo: HostedProvider(online, root / 'data/market_snapshot.json'))
+    monkeypatch.setattr(ui, 'current_price_session', lambda: day)
+    monkeypatch.setattr(ui, 'latest_session', lambda now=None: day)
+    monkeypatch.setattr(ui, 'active_session', lambda: None)
+    monkeypatch.setattr(ui, 'chart_prices', lambda *a, **kw: None)
+    app_test.run()
+    assert not app_test.exception
+    assert next(metric for metric in app_test.metric if metric.label == 'Market Value').value == '$11.00'
+    assert any('not live' in warning.value for warning in app_test.warning)
+    assert not any('default value' in warning.value for warning in app_test.warning)
+    # Session changes in the key trigger a reload; neither quotes nor the alert state are mutated.
+    assert not (root / 'data/state.json').exists()
+    assert app_test.get('download_button')[0].proto.label == 'Export current AI data (JSON)'
+    assert json.loads((root / 'data/market_snapshot.json').read_text())['mode'] == 'CLOSE'

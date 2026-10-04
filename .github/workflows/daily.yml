@@ -118,6 +118,10 @@ jobs:
         run: |
           python -c 'from pathlib import Path; from stockwatch.storage import load_state; load_state(Path("data/state.json"))'
           python -c 'from pathlib import Path; from stockwatch.performance import load_history; load_history(Path("data/performance.json"))'
+          if [ -f data/market_snapshot.json ]; then
+            python -c 'from pathlib import Path; from stockwatch.providers.snapshot import load_snapshot; load_snapshot(Path("data/market_snapshot.json"))'
+            git add -f -- data/market_snapshot.json
+          fi
           if [ -f data/state.json ]; then git add -f -- data/state.json; fi
           if [ -f data/performance.json ]; then git add -f -- data/performance.json; fi
           if [ -f data/hsbc_imports.json ]; then
@@ -125,7 +129,7 @@ jobs:
             python -c 'from pathlib import Path; from stockwatch.storage import load_transactions; load_transactions(Path("data/transactions.csv"))'
             git add -f -- data/transactions.csv data/hsbc_imports.json
           fi
-          if ! git diff --cached --quiet -- data/state.json data/performance.json data/transactions.csv data/hsbc_imports.json; then
+          if ! git diff --cached --quiet -- data/state.json data/performance.json data/transactions.csv data/hsbc_imports.json data/market_snapshot.json; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git commit -m "chore: update StockWatch state [skip ci]"
@@ -153,6 +157,7 @@ jobs:
             logs/*.log
             data/state.json
             data/performance.json
+            data/market_snapshot.json
             data/transactions.csv
             data/hsbc_imports.json
           retention-days: 3

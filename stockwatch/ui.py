@@ -1,6 +1,6 @@
 """Localized Streamlit dashboard. No OpenBB imports or notification state writes."""
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from html import escape
 from functools import wraps
 from pathlib import Path
@@ -24,6 +24,7 @@ from stockwatch.i18n import LANGUAGES, data_status, error_message, language, t
 from stockwatch.notifications.email import configuration_status
 from stockwatch.providers.base import DataUnavailable, PERIODS
 from stockwatch.providers.cached import ClosedSessionProvider, clear_market_cache
+from stockwatch.providers.hosted import HostedProvider
 from stockwatch.providers.demo import DemoProvider
 from stockwatch.providers.openbb_provider import OpenBBProvider
 from stockwatch.reports import money as format_money, percent as format_percent
@@ -61,6 +62,8 @@ def cloud_readonly() -> bool:
 def ui_provider(demo):
     if demo:
         return DemoProvider()
+    if cloud_readonly():
+        return HostedProvider(OpenBBProvider(timeout=30, attempts=1, lightweight=True), ROOT / "data/market_snapshot.json")
     provider = OpenBBProvider()
     if active_session() is None:
         return ClosedSessionProvider(provider, ROOT / ".cache/market", latest_session())
@@ -77,16 +80,56 @@ def market_cache(function):
     def wrapped(*args, **kwargs):
         active = active_session()
         key = ("open", active) if active else ("closed", latest_session())
+        if cloud_readonly():
+            try:
+                stat = (ROOT / "data/market_snapshot.json").stat()
+                key += ("hosted", stat.st_mtime_ns, stat.st_size)
+            except OSError:
+                key += ("hosted", None)
         return cached(args, kwargs, key, function.__name__)
 
     wrapped.clear = cached.clear
     return wrapped
 
 
+def ui_snapshot(config, transactions, provider, as_of, demo):
+    hosted = cloud_readonly() and not demo
+    portfolio, quotes = snapshot(config, transactions, provider, as_of,
+                                closing=demo or hosted and active_session() is None,
+                                intraday=hosted and active_session() is not None)
+    saved = getattr(provider, 'saved', None)
+    if hosted and saved is not None:
+        # A whole-portfolio fallback uses its own date and ledger cutoff. Never
+        # mix an old close into today's P/L or treat absent prices as zero.
+        fallback = portfolio['market_value'] is None or quotes and all(q.price is None for q in quotes.values())
+        if fallback and saved.session <= as_of:
+            old_portfolio, old_quotes = snapshot(config, transactions, saved, saved.session, closing=True)
+            if old_portfolio['market_value'] is not None and any(q.price is not None for q in old_quotes.values()):
+                portfolio, quotes = old_portfolio, old_quotes
+                portfolio['_snapshot_whole'] = True
+        if any('saved snapshot' in q.source for q in quotes.values()):
+            portfolio['_market_snapshot'] = {key: saved.data[key] for key in ('session', 'mode', 'history_session', 'generated_at')}
+    return portfolio, quotes
+
+
+def snapshot_caption(portfolio, quotes, as_of, demo):
+    saved = portfolio.get('_market_snapshot')
+    if saved:
+        st.warning(text('Saved market snapshot from {time} ({mode}, {date}); these prices are not live. Transactions after that date are excluded when the whole portfolio falls back.',
+                        time=saved['generated_at'], mode=saved['mode'], date=saved['session']))
+    else:
+        st.caption(f"{text('intraday estimate') if not demo and active_session() else text('completed session')} · {as_of} · {text('USD')}")
+    if cloud_readonly() and not demo:
+        st.caption(text('Online quotes are attempted first (Yahoo via yfinance); saved Actions data is a dated fallback. Refresh retries online data.'))
+        sources = sorted({q.source for q in quotes.values() if q.price is not None})
+        if sources:
+            st.caption(" · ".join(sources))
+
+
 @market_cache
 def cached_snapshot(config: dict, rows: list[dict], as_of, demo: bool):
     provider = ui_provider(demo)
-    return snapshot(config, validate_transactions(rows), provider, as_of, closing=demo)
+    return ui_snapshot(config, validate_transactions(rows), provider, as_of, demo)
 
 
 @market_cache
@@ -126,8 +169,9 @@ def cached_instrument_quote(symbol, demo):
 def cached_watchlist_snapshot(config, rows, as_of, demo):
     # Quotes already fetch a year's daily bars. Reuse this provider's range cache.
     provider = ui_provider(demo)
-    portfolio, quotes = snapshot(config, validate_transactions(rows), provider, as_of, closing=demo)
-    end = DemoProvider().session if demo else latest_session()
+    portfolio, quotes = ui_snapshot(config, validate_transactions(rows), provider, as_of, demo)
+    saved = portfolio.get("_market_snapshot") if portfolio.get("_snapshot_whole") else None
+    end = date.fromisoformat(saved["history_session"]) if saved else DemoProvider().session if demo else latest_session()
     histories = {}
     for symbol in config["watchlist"]:
         quote = quotes.get(symbol)
@@ -440,11 +484,11 @@ def email_control(path, config, demo):
     enabled = config.get("notifications", {}).get("email_enabled", True)
     toggle_key = f"email_enabled_toggle_{demo}"
     config_key = f"_email_config_{demo}"
-    if st.session_state.get(config_key) != enabled:
+    if toggle_key not in st.session_state or st.session_state.get(config_key) != enabled:
         st.session_state[toggle_key] = enabled
         st.session_state[config_key] = enabled
-    selected = st.toggle(text("Email notifications"), value=enabled, disabled=demo or cloud_readonly(), key=toggle_key)
-    if selected != enabled and not demo:
+    selected = st.toggle(text("Email notifications"), disabled=demo or cloud_readonly(), key=toggle_key)
+    if selected != enabled and not demo and not cloud_readonly():
         try:
             updated = load_config(path)
             updated["notifications"] = {"email_enabled": selected}
@@ -534,7 +578,7 @@ def settings_page(path: Path, config: dict, demo: bool):
 
 @st.cache_data(ttl=300, show_spinner=False)
 def cached_performance_preview(rows, benchmark, end, demo, existing):
-    provider = DemoProvider() if demo else OpenBBProvider()
+    provider = ui_provider(demo)
     return build_history(validate_transactions(rows), provider, end, benchmark, existing=existing)
 
 
@@ -616,7 +660,7 @@ def ai_export(config, transactions, portfolio, quotes, as_of, demo, watchlist_ro
     """Download the visible snapshot without sending, fetching or updating state."""
     now = datetime.now(timezone.utc)
     completed = DemoProvider().session if demo else latest_session(now)
-    mode = "CLOSE" if as_of <= completed else "INTRADAY"
+    mode = portfolio.get("_market_snapshot", {}).get("mode") if portfolio.get("_snapshot_whole") else "CLOSE" if as_of <= completed else "INTRADAY"
     history = None
     history_status = "not_loaded" if demo else "missing"
     if not demo:
@@ -636,6 +680,8 @@ def ai_export(config, transactions, portfolio, quotes, as_of, demo, watchlist_ro
                        demo=demo, performance=history, watchlist_rows=watchlist_rows)
     data.update(origin="dashboard_export", price_basis="dashboard_snapshot_may_be_cached",
                 alert_evaluation="not_evaluated", performance_status=history_status)
+    if saved := portfolio.get("_market_snapshot"):
+        data.update(saved_market_snapshot=saved, price_basis="saved_snapshot_or_online_quotes_with_per_instrument_source")
     for item in data["instruments"]:
         if item["symbol"] not in quotes:
             item["data_status"] = "not_loaded"
@@ -708,11 +754,14 @@ def main(app_name: str = "StockWatch"):
         page_footer()
         return
     as_of = DemoProvider().session if demo else current_price_session()
-    st.caption(f"{text('intraday estimate') if not demo and active_session() else text('completed session')} · {as_of} · {text('USD')}")
     if page == "Watchlist & Alerts":
         with st.spinner(text("Loading portfolio…")):
             portfolio, quotes, histories = cached_watchlist_snapshot(config, [tx.row() for tx in transactions], as_of, demo)
-        chart_day = DemoProvider().session if demo else latest_session()
+        saved = portfolio.get("_market_snapshot") if portfolio.get("_snapshot_whole") else None
+        if saved:
+            as_of = date.fromisoformat(saved["session"])
+        chart_day = date.fromisoformat(saved["history_session"]) if saved else DemoProvider().session if demo else latest_session()
+        snapshot_caption(portfolio, quotes, as_of, demo)
         with export_slot:
             ai_export(config, transactions, portfolio, quotes, as_of, demo,
                       candidate_rows(config, {row["symbol"] for row in portfolio["holdings"]}, quotes, histories, chart_day), compact=True)
@@ -722,9 +771,14 @@ def main(app_name: str = "StockWatch"):
     with st.spinner(text("Loading portfolio…")):
         # Dashboard/Holdings do not display pure watchlist quotes.
         portfolio, quotes = cached_snapshot({**config, "watchlist": {}}, [tx.row() for tx in transactions], as_of, demo)
+    saved = portfolio.get("_market_snapshot") if portfolio.get("_snapshot_whole") else None
+    if saved:
+        as_of = date.fromisoformat(saved["session"])
+    snapshot_caption(portfolio, quotes, as_of, demo)
     summary(portfolio)
     if page == "Dashboard":
-        milestone_caption(portfolio, transactions, config, demo, as_of)
+        if not saved or as_of == current_price_session():
+            milestone_caption(portfolio, transactions, config, demo, as_of)
         with export_slot:
             ai_export(config, transactions, portfolio, quotes, as_of, demo, compact=True)
     unavailable = [symbol for symbol, quote in quotes.items() if quote.error or quote.price is None]
@@ -763,7 +817,8 @@ def main(app_name: str = "StockWatch"):
                         st.error(localized_error(exc) if isinstance(exc, ValidationError) else text("Save failed; original file preserved."))
                 if "target_shares" in entry:
                     st.caption(text("Target: {target:g} shares · Held: {shares}", target=entry["target_shares"], shares=row["shares"]))
-    chart_day = DemoProvider().session if demo else latest_session()
+    market_context = portfolio.get("_market_snapshot") if portfolio.get("_snapshot_whole") else None
+    chart_day = date.fromisoformat(market_context["history_session"]) if market_context else DemoProvider().session if demo else latest_session()
     held_symbols = [row["symbol"] for row in portfolio["holdings"]]
     if page == "Dashboard":
         with st.container(key="overview_charts"):
