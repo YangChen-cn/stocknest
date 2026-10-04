@@ -122,7 +122,7 @@ class OpenBBProvider:
         now = now or datetime.now(timezone.utc)
         if active_session(now) != session:
             return Quote(symbol, session=session, error="Data unavailable: no active NYSE session")
-        payload = json.dumps({"operation": "intraday", "symbol": symbol, "session": session.isoformat(), "lightweight": self.lightweight})
+        payload = json.dumps({"operation": "intraday", "symbol": symbol, "session": session.isoformat(), **({"lightweight": True} if self.lightweight else {})})
         for attempt in range(self.attempts):
             try:
                 result = subprocess.run([sys.executable, "-m", "stockwatch.providers.worker"], input=payload,
@@ -167,7 +167,7 @@ class OpenBBProvider:
                 selected = frame[(frame.date >= start) & (frame.date < end)].copy()
                 if required_session is None or required_session in set(selected.date):
                     return selected
-        payload = json.dumps({"symbol": symbol, "start": start.isoformat(), "end": end.isoformat(), "lightweight": self.lightweight})
+        payload = json.dumps({"symbol": symbol, "start": start.isoformat(), "end": end.isoformat(), **({"lightweight": True} if self.lightweight else {})})
         error = "Provider failed"
         partial = None
         for attempt in range(self.attempts):
