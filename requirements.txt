@@ -1,0 +1,4 @@
+# Streamlit Community Cloud installs this file. Point it at the verified lock
+# so the hosted app resolves the same dependency set as the local venv.
+# Requires Python 3.11 (select it in the app's advanced settings).
+-r requirements.lock

@@ -357,6 +357,7 @@ ZH.update({
     "Portfolio NAV is {value} from the all-time high of {date} ({basis}).": "组合净值距 {date} 的历史高点为 {value}（{basis}）。",
     "completed session": "已收盘",
     "intraday estimate": "盘中估算",
+    "Cloud read-only view: this deployment shows the portfolio synced to your private repository. Make changes locally, then sync.": "云端只读视图：此处展示已同步到私有仓库的持仓数据；如需修改，请在本机 Dashboard 操作并同步到 GitHub。",
 })
 
 # Rotating report epigraphs — patience, accumulation and composure, never advice.

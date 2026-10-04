@@ -412,6 +412,23 @@ def test_dashboard_hides_streamlit_developer_toolbar(app):
     assert st.get_option("client.toolbarMode") == "minimal"
 
 
+def test_cloud_readonly_blocks_saving_but_keeps_views(app, monkeypatch):
+    monkeypatch.setenv("STOCKWATCH_READONLY", "1")
+    app_test, _ = app
+    app_test.run()
+    assert not app_test.exception
+    assert any("Cloud read-only view" in info.value for info in app_test.info)
+    assert app_test.toggle[0].disabled  # Email notifications on the Dashboard.
+    app_test.sidebar.radio[0].set_value("Settings").run()
+    assert next(button for button in app_test.button if button.label == "Save settings").disabled
+    assert next(button for button in app_test.button if button.label == "Sync with GitHub").disabled
+    # Demo mode and the AI export stay available on the hosted read-only view.
+    app_test.sidebar.toggle[0].set_value(True).run()
+    assert not app_test.exception and "SIMULATED" in app_test.warning[0].value
+    app_test.sidebar.radio[0].set_value("Dashboard").run()
+    assert app_test.get("download_button")[0].proto.label == "Export current AI data (JSON)"
+
+
 def test_dashboard_deltas_and_all_time_high_caption(app, monkeypatch):
     from datetime import date
     import pandas as pd

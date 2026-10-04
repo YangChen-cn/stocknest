@@ -1,4 +1,5 @@
 """Localized Streamlit dashboard. No OpenBB imports or notification state writes."""
+import os
 from datetime import datetime, timezone
 from html import escape
 from functools import wraps
@@ -50,6 +51,11 @@ def percent(value, **options) -> str:
 
 def localized_error(error: Exception) -> str:
     return error_message(error, st.session_state.get("_stockwatch_language", "en"))
+
+
+def cloud_readonly() -> bool:
+    """Hosted deployments (Streamlit Community Cloud) render the synced repository read-only."""
+    return os.environ.get("STOCKWATCH_READONLY") == "1"
 
 
 def ui_provider(demo):
@@ -269,7 +275,7 @@ def transactions_page(path: Path, transactions, config: dict, demo: bool):
         symbol = symbol_picker("trade", sorted({tx.symbol for tx in transactions} | set(config["watchlist"])), demo)
         if symbol:
             st.caption(text("Recording transaction for {symbol}. Enter the actual fill price; the quote above is for reference only.", symbol=symbol))
-            if symbol not in config["watchlist"] and st.button(text("Add selected stock to watchlist"), disabled=demo):
+            if symbol not in config["watchlist"] and st.button(text("Add selected stock to watchlist"), disabled=demo or cloud_readonly()):
                 try:
                     updated = load_config(ROOT / "config.yaml")
                     updated["watchlist"].setdefault(symbol, {"thesis": "", "status": "watching"})
@@ -289,7 +295,7 @@ def transactions_page(path: Path, transactions, config: dict, demo: bool):
             fee = st.number_input(text("Fee (USD)"), min_value=0.0, value=0.0, step=0.01, key=f"trade_fee_{symbol}")
             st.caption(text("Trade dates use New York market dates. Fees default to zero."))
             note = st.text_input(text("Note"))
-            added = st.form_submit_button(text("Add transaction"), disabled=demo or not symbol)
+            added = st.form_submit_button(text("Add transaction"), disabled=demo or cloud_readonly() or not symbol)
         if added:
             try:
                 # Reload before appending, so existing edits made in another tab survive.
@@ -312,7 +318,7 @@ def transactions_page(path: Path, transactions, config: dict, demo: bool):
             edited = st.data_editor(frame, num_rows="dynamic", hide_index=True, width="stretch",
                                     column_config=columns,
                                     key=f"transactions_editor_{demo}")
-            submitted = st.form_submit_button(text("Save transactions"), disabled=demo)
+            submitted = st.form_submit_button(text("Save transactions"), disabled=demo or cloud_readonly())
         if demo:
             st.info(text("Demo files are read-only. Turn off Demo mode to edit your real portfolio."))
         if submitted:
@@ -362,7 +368,7 @@ def watchlist_page(path: Path, config: dict, quotes: dict, demo: bool, portfolio
                 left, right = st.columns(2)
                 below = left.number_input(text("Below"), min_value=0.0, value=float(entry.get("alerts", {}).get("below", 0)), step=0.01, key=f"below_{symbol}")
                 move = right.number_input(text("Daily Move %"), min_value=0.0, value=float(entry.get("alerts", {}).get("daily_move_pct", 0)), step=1.0, key=f"move_{symbol}")
-            saved = st.form_submit_button(text("Save this stock"), disabled=demo or not symbol)
+            saved = st.form_submit_button(text("Save this stock"), disabled=demo or cloud_readonly() or not symbol)
         if saved:
             try:
                 updated = load_config(path)
@@ -397,7 +403,7 @@ def watchlist_page(path: Path, config: dict, quotes: dict, demo: bool, portfolio
                                                    "Target Shares": st.column_config.NumberColumn(text("Target Shares"), min_value=0.0),
                                                    "Below": st.column_config.NumberColumn(text("Below"), min_value=0.01),
                                                    "Daily Move %": st.column_config.NumberColumn(text("Daily Move %"), min_value=0.01)}, key=f"watchlist_editor_{demo}")
-            submitted = st.form_submit_button(text("Save watchlist"), disabled=demo)
+            submitted = st.form_submit_button(text("Save watchlist"), disabled=demo or cloud_readonly())
         if submitted:
             try:
                 watchlist = {}
@@ -437,7 +443,7 @@ def email_control(path, config, demo):
     if st.session_state.get(config_key) != enabled:
         st.session_state[toggle_key] = enabled
         st.session_state[config_key] = enabled
-    selected = st.toggle(text("Email notifications"), value=enabled, disabled=demo, key=toggle_key)
+    selected = st.toggle(text("Email notifications"), value=enabled, disabled=demo or cloud_readonly(), key=toggle_key)
     if selected != enabled and not demo:
         try:
             updated = load_config(path)
@@ -452,7 +458,7 @@ def email_control(path, config, demo):
 
 
 def gmail_controls(demo):
-    render_gmail_controls(demo, ROOT)
+    render_gmail_controls(demo, ROOT, readonly=cloud_readonly())
 
 
 def hsbc_control(path, config, demo, *, settings=False):
@@ -463,7 +469,7 @@ def hsbc_control(path, config, demo, *, settings=False):
             allow_date = st.checkbox(text("Use the email New York date when execution date is missing"), value=options.get("allow_email_date", True))
             st.caption(text("Email date is an estimate, not a confirmed execution date. Delayed emails can have the wrong trade date."))
             days = st.number_input(text("HSBC email lookback (days)"), min_value=1, max_value=365, value=options.get("lookback_days", 3))
-            saved = st.form_submit_button(text("Save HSBC settings"), disabled=demo)
+            saved = st.form_submit_button(text("Save HSBC settings"), disabled=demo or cloud_readonly())
         if saved:
             try:
                 updated = load_config(path)
@@ -475,7 +481,7 @@ def hsbc_control(path, config, demo, *, settings=False):
                 st.error(localized_error(exc) if not isinstance(exc, OSError) else text("Save failed; original file preserved."))
     manual_days = st.number_input(text("Manual HSBC lookback (days)"), min_value=1, max_value=365, value=options.get("lookback_days", 3), key="hsbc_manual_days")
     st.caption(text("Daily reports check at most three days. This window is for one-time manual history imports."))
-    if st.button(text("Sync HSBC trades now"), disabled=demo or not options.get("enabled", False), key="hsbc_now"):
+    if st.button(text("Sync HSBC trades now"), disabled=demo or cloud_readonly() or not options.get("enabled", False), key="hsbc_now"):
         try:
             present = configuration_status()
             if present["GMAIL_ADDRESS"] and present["GMAIL_APP_PASSWORD"]:
@@ -493,11 +499,11 @@ def hsbc_control(path, config, demo, *, settings=False):
 
 
 def control_center(path, config, demo):
-    render_control_center(path, config, demo, ROOT, hsbc_control, email_control)
+    render_control_center(path, config, demo, ROOT, hsbc_control, email_control, readonly=cloud_readonly())
 
 
 def settings_page(path: Path, config: dict, demo: bool):
-    report_controls(path, config, demo, ROOT)
+    report_controls(path, config, demo, ROOT, readonly=cloud_readonly())
     control_center(path, config, demo)
     st.selectbox(text("Base currency"), ["USD"], format_func={"USD": text("USD")}.__getitem__)
     selected_language = st.selectbox(text("Language"), list(LANGUAGES), index=list(LANGUAGES).index(st.session_state["_stockwatch_language"]), format_func=LANGUAGES.get)
@@ -505,7 +511,7 @@ def settings_page(path: Path, config: dict, demo: bool):
     with st.expander(text("Advanced: performance benchmark"), expanded=False):
         benchmark = st.text_input(text("Benchmark ticker"), value=config["portfolio"].get("benchmark", DEFAULT_BENCHMARK), max_chars=20).strip().upper()
         st.caption(text("Benchmark: price return, excluding dividends."))
-    if st.button(text("Save settings"), disabled=demo):
+    if st.button(text("Save settings"), disabled=demo or cloud_readonly()):
         try:
             save_config(path, {**config, "portfolio": {**config["portfolio"], "language": selected_language, "benchmark": benchmark or config["portfolio"].get("benchmark", DEFAULT_BENCHMARK)}})
             st.session_state["_stockwatch_notice"] = "Settings saved locally."
@@ -515,7 +521,7 @@ def settings_page(path: Path, config: dict, demo: bool):
     gmail_controls(demo)
     st.subheader(text("GitHub sync"))
     st.write(text("Sync commits transactions and config, pulls remote updates including alert state, and pushes to main."))
-    if st.button(text("Sync with GitHub"), disabled=demo):
+    if st.button(text("Sync with GitHub"), disabled=demo or cloud_readonly()):
         try:
             with st.spinner(text("Syncing with GitHub…")):
                 result = sync(ROOT)
@@ -681,6 +687,8 @@ def main(app_name: str = "StockWatch"):
         st.success(text(notice))
     if demo:
         st.warning(text("SIMULATED DEMO DATA · As of Oct 6, 2026 · No emails are sent. Demo files are read-only."))
+    if cloud_readonly():
+        st.info(text("Cloud read-only view: this deployment shows the portfolio synced to your private repository. Make changes locally, then sync."))
     try:
         config = load_config(config_path)
         transactions = load_transactions(transactions_path)
@@ -742,7 +750,7 @@ def main(app_name: str = "StockWatch"):
                 with st.form(f"holding_notes_{symbol}"):
                     thesis = st.text_area(text("Thesis"), value=entry.get("thesis", ""), key=f"holding_thesis_{symbol}")
                     st.caption(text("Notes are optional. Saving notes does not create a transaction or require a target price."))
-                    saved = st.form_submit_button(text("Save holding notes"), disabled=demo)
+                    saved = st.form_submit_button(text("Save holding notes"), disabled=demo or cloud_readonly())
                 if saved:
                     try:
                         updated = load_config(config_path)
@@ -790,7 +798,7 @@ def main(app_name: str = "StockWatch"):
                 st.caption(text("No watched stocks yet. Add them on Watchlist & Alerts."))
         with st.expander(text("Reports & automation"), expanded=False):
             email_control(config_path, config, demo)
-            report_controls(config_path, config, demo, ROOT)
+            report_controls(config_path, config, demo, ROOT, readonly=cloud_readonly())
             gmail_controls(demo)
             with st.expander(text("HSBC trade import")):
                 hsbc_control(config_path, config, demo)

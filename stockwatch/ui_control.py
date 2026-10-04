@@ -19,7 +19,7 @@ def localized_error(error):
     return error_message(error, st.session_state.get('_stockwatch_language', 'en'))
 
 
-def gmail_controls(demo, ROOT):
+def gmail_controls(demo, ROOT, readonly=False):
     st.caption(text("Cloud Gmail uses GitHub Actions Secrets. Local Gmail is optional and does not indicate cloud health."))
     if st.button(text("Check cloud Gmail Secrets"), disabled=demo):
         try:
@@ -44,13 +44,13 @@ def gmail_controls(demo, ROOT):
                 address = st.text_input(text("Local Gmail Address"), value=local.get("GMAIL_ADDRESS", values.get("GMAIL_ADDRESS", "")))
                 recipient = st.text_input(text("Local Report Email"), value=local.get("REPORT_EMAIL", values.get("REPORT_EMAIL", "")))
                 password = st.text_input(text("Local Gmail App Password"), type="password", key="local_gmail_password")
-                saved = st.form_submit_button(text("Save local Gmail"), disabled=demo)
+                saved = st.form_submit_button(text("Save local Gmail"), disabled=demo or readonly)
             if saved:
                 save_local(address, recipient, password, ROOT)
                 st.session_state["_clear_local_password"] = True
                 st.session_state["_stockwatch_notice"] = "Local Gmail saved. Cloud Secrets were not changed."
                 st.rerun()
-            if st.button(text("Remove saved local Gmail"), disabled=demo or not local):
+            if st.button(text("Remove saved local Gmail"), disabled=demo or readonly or not local):
                 remove_local(ROOT)
                 st.session_state["_clear_local_password"] = True
                 st.session_state["_stockwatch_notice"] = "Local Gmail removed. Environment variables and cloud Secrets were not changed."
@@ -58,14 +58,14 @@ def gmail_controls(demo, ROOT):
         except (ValidationError, OSError) as exc:
             st.error(localized_error(exc) if not isinstance(exc, OSError) else text("Save failed; original file preserved."))
 
-def control_center(path, config, demo, ROOT, hsbc_control, email_control):
+def control_center(path, config, demo, ROOT, hsbc_control, email_control, readonly=False):
     st.subheader(text("Control Center"))
     with st.expander(text("HSBC trade import")):
         hsbc_control(path, config, demo, settings=True)
     st.caption(text("Scheduled reports run in GitHub Actions, even when this computer is off. These controls manage the existing cloud workflow."))
     with st.expander(text("Cloud automation (GitHub Actions)"), expanded=False):
         email_control(path, config, demo)
-        if st.button(text("Sync notification setting with GitHub"), disabled=demo):
+        if st.button(text("Sync notification setting with GitHub"), disabled=demo or readonly):
             try:
                 sync(ROOT)
                 st.success(text("Configuration synced to GitHub."))
@@ -89,7 +89,7 @@ def control_center(path, config, demo, ROOT, hsbc_control, email_control):
             mode_labels = {"CLOSE": text("Closing report"), "INTRADAY": text("Intraday brief"), "WEEKLY": text("Weekly report"), "MONTHLY": text("Monthly report")}
             mode = st.selectbox(text("Report mode"), list(mode_labels), format_func=mode_labels.__getitem__)
             dry_run = st.checkbox(text("Preview only (no email or state changes)"), value=True)
-            dispatch = st.form_submit_button(text("Run workflow"), disabled=demo)
+            dispatch = st.form_submit_button(text("Run workflow"), disabled=demo or readonly)
         if dispatch:
             try:
                 trigger_workflow(ROOT, mode, dry_run=dry_run)
@@ -97,8 +97,8 @@ def control_center(path, config, demo, ROOT, hsbc_control, email_control):
             except ControlError as exc:
                 st.error(localized_error(exc))
         left, right = st.columns(2)
-        enable = left.button(text("Enable cloud daily workflow"), disabled=demo)
-        disable = right.button(text("Disable cloud daily workflow"), disabled=demo)
+        enable = left.button(text("Enable cloud daily workflow"), disabled=demo or readonly)
+        disable = right.button(text("Disable cloud daily workflow"), disabled=demo or readonly)
         if enable or disable:
             try:
                 set_workflow_enabled(ROOT, enable)

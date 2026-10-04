@@ -13,7 +13,7 @@ LABELS = {"INTRADAY": "Intraday brief", "CLOSE": "Closing report", "WEEKLY": "We
 DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday")
 
 
-def report_controls(path, config, demo, root):
+def report_controls(path, config, demo, root, readonly=False):
     lang = st.session_state.get('_stockwatch_language', 'en')
     def tr(message):
         return t(message, lang)
@@ -40,7 +40,7 @@ def report_controls(path, config, demo, root):
                 else:
                     updated[mode]['days'] = cols[2].multiselect(tr('Weekdays'), list(range(5)), default=item['days'], format_func=lambda day: tr(DAYS[day]), key=f'report_{mode}_days')
             st.caption(tr("Weekend summaries use completed closes: weekly through the last session of the week, monthly through the last session of the previous month. Default 10:52 Hong Kong time."))
-            saved = st.form_submit_button(tr('Save report schedules'), disabled=demo)
+            saved = st.form_submit_button(tr('Save report schedules'), disabled=demo or readonly)
         if saved:
             try:
                 current = load_config(path)
@@ -51,7 +51,7 @@ def report_controls(path, config, demo, root):
             except (ValidationError, OSError) as exc:
                 st.error(error_message(exc, lang) if isinstance(exc, ValidationError) else tr('Save failed; original file preserved.'))
         st.caption(tr("Cloud time changes require CRONJOB_API_KEY in GitHub Secrets and an existing authorized cron-job.org report job. The key is never saved in this app. Native GitHub schedules remain a fixed-time fallback."))
-        if st.button(tr('Sync and apply cloud schedules'), disabled=demo):
+        if st.button(tr('Sync and apply cloud schedules'), disabled=demo or readonly):
             try:
                 sync(root)
                 apply_report_schedules(root)
