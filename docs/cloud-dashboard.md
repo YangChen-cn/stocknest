@@ -1,4 +1,4 @@
-# 云端只读 Dashboard
+# 云端 Dashboard 与可选编辑
 
 可以从自己的私有 GitHub 仓库部署到 Streamlit Community Cloud，电脑关机后也能查看。部署后务必把 Viewer access 设为指定邮箱；只读模式限制应用操作，不替代访问认证。
 
@@ -11,7 +11,7 @@
    STOCKWATCH_READONLY = "1"
    ```
 
-   Streamlit 会将顶层 Secrets 提供为环境变量。这里不需要 Gmail 密码、GitHub Token 或本机凭据。
+   Streamlit 会将顶层 Secrets 提供为环境变量。只读查看不需要 Gmail 密码、GitHub Token 或本机凭据。
 3. 部署完成后打开 Sharing / Viewer access，仅允许自己指定的邮箱访问。不要把包含真实交易的应用设为公开访问。
 4. `requirements.txt` 使用现有锁定依赖；首次安装可能较慢。
 
@@ -37,9 +37,27 @@ git push origin main
 
 `--config`、`--transactions`、`--output` 可指定独立路径。公开示例仓库不要强制添加此文件。`daily --dry-run` / Demo 不更新正式快照。
 
+## 可选：云端编辑关注股票与持仓笔记
+
+默认仍只读。希望两端维护同一份观察列表时，保留 `STOCKWATCH_READONLY = "1"`，在 **Streamlit 应用设置 → Secrets** 增加：
+
+```toml
+STOCKWATCH_CLOUD_REPOSITORY = "YOUR_NAME/YOUR_PRIVATE_REPO"
+STOCKWATCH_CLOUD_TOKEN = "YOUR_DEDICATED_TOKEN"
+```
+
+凭据使用 [GitHub fine-grained token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)：选择仅自己的私人仓库，Repository permissions → **Contents: Read and write**，设置有效期。不要使用通用凭据，不要把值写入 YAML、项目文件、日志或聊天。Streamlit Secrets 与 Actions Gmail Secrets 是不同配置；此功能不需要 Gmail。到期或撤销后，页面自动回到只读。Viewer access 必须继续限制指定邮箱；凭据仅控制 GitHub 权限，不代替页面身份认证。
+
+- **可以改**：「关注与提醒」中新增、修改或删除关注股票、目标价和提醒；「持仓」中编辑持仓逻辑 / 笔记。纯观察仍无需目标价。
+- **仍只读**：交易账本、语言 / Benchmark、邮件开关、Gmail 配置、报告时间、工作流控制、Git 同步和本机服务。云端也不保存 Demo 修改。
+- **保存目的地**：直接用 [GitHub Contents API](https://docs.github.com/en/rest/repos/contents#create-or-update-file-contents) 更新私人仓库 `main` 的 `config.yaml`，提交包含 `[skip ci]`；不是保存到托管机器的临时磁盘。程序先核验仓库私有、默认分支 main，并仅合并 watchlist 字段。其他配置、交易、提醒状态和表现文件不在写入接口中。
+- **本机接收**：在本机「设置 → 同步到 GitHub」拉取。没有后台自动双向同步；云端保存后，之后的 Actions 报告直接读取仓库的新配置。本机未保存的代码修改可能阻止同步，需先处理；同一 YAML 行的 Git 冲突仍需在终端解决，应用不会强推或丢弃本机提交。
+- **并发保护**：云端保存前读取最新配置；不同字段可合并，同一字段被另一端改过则拒绝保存并保留页面草稿。保存还使用文件 SHA 防止读写期间覆盖其他提交。想放弃草稿，点击侧栏「重新载入云端配置（放弃编辑草稿）」；远端配置读取缓存最多30秒，保存时始终重新读取。
+- **网络失败**：若不能确认是否保存成功，先重新载入查看，再重试；相同修改不会产生重复提交。凭据权限不足、配置无效或仓库为公开时均禁止写入。
+
 ## 只读与排查
 
 - 可浏览六个页面、切换 Demo、导出 AI JSON、刷新行情和计算有限历史预览。
-- 不允许保存用户数据、本机 Gmail、控制工作流、Git 同步或登录自启；邮件和提醒仍由原 Actions 任务管理。
+- 未配置上述专用凭据时不能保存用户数据；配置后仅开放关注列表与持仓笔记。本机 Gmail、工作流、Git 同步和登录自启仍禁止云端操作；邮件和提醒由原 Actions 任务管理。
 - 日志只输出安全的错误分类：限流、网络、超时、依赖、进程被终止或空数据。`worker killed` 可能与资源限制有关，不等于已经确认内存不足。只有明确的 rate-limit / 429 分类才支持限流判断。
 - 不保证免费的 Yahoo 在共享云 IP 上始终可用；快照可用性不代表在线报价恢复。Stooq 在当前验证中未返回可用报价，尚未作为实时源接入。

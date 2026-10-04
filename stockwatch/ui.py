@@ -1,5 +1,6 @@
 """Localized Streamlit dashboard. No OpenBB imports or notification state writes."""
 import os
+from copy import deepcopy
 from datetime import date, datetime, timezone
 from html import escape
 from functools import wraps
@@ -11,6 +12,8 @@ from pandas.io.formats.style import Styler
 import plotly.express as px
 import streamlit as st
 
+from stockwatch.ui_cloud import cloud_config, edit_base, editing_ready, reset_editors, save_watchlist as save_watchlist_edit
+from stockwatch.cloud_config import CloudConfigError, CloudSettings, configured as cloud_edit_configured
 from stockwatch.ui_reports import report_controls
 from stockwatch.ui_control import control_center as render_control_center, gmail_controls as render_gmail_controls
 from stockwatch.imports.gmail import sync_hsbc
@@ -55,7 +58,7 @@ def localized_error(error: Exception) -> str:
 
 
 def cloud_readonly() -> bool:
-    """Hosted deployments (Streamlit Community Cloud) render the synced repository read-only."""
+    """Hosted mode blocks local writes; dedicated credentials permit watchlist edits."""
     return os.environ.get("STOCKWATCH_READONLY") == "1"
 
 
@@ -399,7 +402,8 @@ def watchlist_page(path: Path, config: dict, quotes: dict, demo: bool, portfolio
         st.info(text("Your candidate pool is empty. Add a stock below; no purchase is made."))
     with st.expander(text("Add or update a watched stock"), expanded=False):
         symbol = symbol_picker("watch", sorted(quotes), demo)
-        entry = config["watchlist"].get(symbol, {})
+        base = edit_base(f"watch_{symbol}", config)
+        entry = base["watchlist"].get(symbol, {})
         st.caption(text("Watching needs no target price or alert. Optional fields can stay empty."))
         with st.form("watch_stock_form"):
             thesis = st.text_input(text("Thesis"), value=entry.get("thesis", ""), key=f"thesis_{symbol}")
@@ -412,10 +416,10 @@ def watchlist_page(path: Path, config: dict, quotes: dict, demo: bool, portfolio
                 left, right = st.columns(2)
                 below = left.number_input(text("Below"), min_value=0.0, value=float(entry.get("alerts", {}).get("below", 0)), step=0.01, key=f"below_{symbol}")
                 move = right.number_input(text("Daily Move %"), min_value=0.0, value=float(entry.get("alerts", {}).get("daily_move_pct", 0)), step=1.0, key=f"move_{symbol}")
-            saved = st.form_submit_button(text("Save this stock"), disabled=demo or cloud_readonly() or not symbol)
+            saved = st.form_submit_button(text("Save this stock"), disabled=demo or (cloud_readonly() and not editing_ready()) or not symbol)
         if saved:
             try:
-                updated = load_config(path)
+                updated = deepcopy(base)
                 item = {"thesis": thesis, "status": status}
                 if buy_below > 0:
                     item["buy_below"] = buy_below
@@ -425,15 +429,16 @@ def watchlist_page(path: Path, config: dict, quotes: dict, demo: bool, portfolio
                 if alerts:
                     item["alerts"] = alerts
                 updated["watchlist"][symbol] = item
-                save_config(path, updated)
+                notice = save_watchlist_edit(path, base, updated, hosted=cloud_readonly())
                 cached_snapshot.clear()
-                st.session_state["_stockwatch_notice"] = "Watchlist saved locally. Sync with GitHub to update daily alerts."
+                st.session_state["_stockwatch_notice"] = notice
                 st.rerun()
             except (ValidationError, OSError) as exc:
                 st.error(localized_error(exc) if isinstance(exc, ValidationError) else text("Save failed; original file preserved."))
     with st.expander(text("Edit all watchlist entries"), expanded=False):
+        bulk_base = edit_base("watchlist_bulk", config)
         records = []
-        for symbol, entry in config["watchlist"].items():
+        for symbol, entry in bulk_base["watchlist"].items():
             records.append({"Symbol": symbol, "Thesis": entry.get("thesis", ""), "Target Shares": entry.get("target_shares"),
                             "Status": entry.get("status", "watching"), "Buy Below": entry.get("buy_below"),
                             "Below": entry.get("alerts", {}).get("below"), "Daily Move %": entry.get("alerts", {}).get("daily_move_pct")})
@@ -447,7 +452,7 @@ def watchlist_page(path: Path, config: dict, quotes: dict, demo: bool, portfolio
                                                    "Target Shares": st.column_config.NumberColumn(text("Target Shares"), min_value=0.0),
                                                    "Below": st.column_config.NumberColumn(text("Below"), min_value=0.01),
                                                    "Daily Move %": st.column_config.NumberColumn(text("Daily Move %"), min_value=0.01)}, key=f"watchlist_editor_{demo}")
-            submitted = st.form_submit_button(text("Save watchlist"), disabled=demo or cloud_readonly())
+            submitted = st.form_submit_button(text("Save watchlist"), disabled=demo or (cloud_readonly() and not editing_ready()))
         if submitted:
             try:
                 watchlist = {}
@@ -469,8 +474,7 @@ def watchlist_page(path: Path, config: dict, quotes: dict, demo: bool, portfolio
                     if alerts:
                         entry["alerts"] = alerts
                     watchlist[symbol] = entry
-                save_config(path, {**config, "watchlist": watchlist})
-                st.session_state["_stockwatch_notice"] = "Watchlist saved locally. Sync with GitHub to update daily alerts."
+                st.session_state["_stockwatch_notice"] = save_watchlist_edit(path, bulk_base, {**bulk_base, "watchlist": watchlist}, hosted=cloud_readonly())
                 cached_snapshot.clear()
                 st.rerun()
             except (ValidationError, OSError) as exc:
@@ -570,7 +574,9 @@ def settings_page(path: Path, config: dict, demo: bool):
             with st.spinner(text("Syncing with GitHub…")):
                 result = sync(ROOT)
             cached_snapshot.clear()
-            st.success(text(result))
+            st.session_state["_reset_watch_editors"] = True
+            st.session_state["_stockwatch_notice"] = result
+            st.rerun()
         except (SyncError, ValidationError) as exc:
             st.error(localized_error(exc))
     st.caption(text("This button uses your local Git login. Conflicting changes are preserved for manual resolution."))
@@ -699,6 +705,8 @@ def main(app_name: str = "StockWatch"):
     st.set_option("client.toolbarMode", "minimal")
     st.set_page_config(page_title=app_name, page_icon="📈", layout="wide")
     apply_style()
+    if st.session_state.pop("_reset_watch_editors", False):
+        reset_editors()
     try:
         ensure_user_files(ROOT)
         st.session_state["_stockwatch_language"] = language(load_config(ROOT / "config.yaml"))
@@ -729,15 +737,30 @@ def main(app_name: str = "StockWatch"):
         # Instrument-name searches retain their separate cache.
     config_path = ROOT / ("examples/config.yaml" if demo else "config.yaml")
     transactions_path = ROOT / ("examples/transactions.csv" if demo else "data/transactions.csv")
+    if cloud_readonly() and cloud_edit_configured():
+        if st.sidebar.button(text("Reload cloud configuration (discard editor drafts)")):
+            cloud_config.clear()
+            reset_editors()
     if notice := st.session_state.pop("_stockwatch_notice", None):
         st.success(text(notice))
     if demo:
         st.warning(text("SIMULATED DEMO DATA · As of Oct 6, 2026 · No emails are sent. Demo files are read-only."))
-    if cloud_readonly():
-        st.info(text("Cloud read-only view: this deployment shows the portfolio synced to your private repository. Make changes locally, then sync."))
     try:
         config = load_config(config_path)
         transactions = load_transactions(transactions_path)
+        st.session_state['_cloud_edit_ready'] = False
+        if cloud_readonly() and not demo and cloud_edit_configured():
+            try:
+                settings = CloudSettings.from_environment()
+                config = cloud_config(settings.repository)
+                st.session_state['_cloud_edit_ready'] = True
+            except CloudConfigError as exc:
+                st.warning(localized_error(exc))
+        if cloud_readonly():
+            if editing_ready() and not demo:
+                st.info(text("Cloud editing: watchlist and holding notes save directly to your private GitHub repository. Transactions and automation remain read-only. Pull changes with Sync with GitHub on your local Dashboard."))
+            else:
+                st.info(text("Cloud read-only view: this deployment shows the portfolio synced to your private repository. Make changes locally, then sync."))
     except (ValidationError, OSError) as exc:
         st.error(localized_error(exc) if isinstance(exc, ValidationError) else text("Could not read portfolio files. Check the project directory."))
         return
@@ -798,20 +821,21 @@ def main(app_name: str = "StockWatch"):
                 st.caption(text("Daily P/L adjusts for recorded buys, sells and fees; trade-day returns use daily timing assumptions."))
     if page == "Holdings":
         for row in portfolio["holdings"]:
-            entry = config["watchlist"].get(row["symbol"], {})
             symbol = row["symbol"]
+            notes_base = edit_base(f"notes_{symbol}", config)
+            entry = notes_base["watchlist"].get(symbol, {})
             with st.expander(text("Holding notes: {symbol}", symbol=symbol), expanded=False):
                 with st.form(f"holding_notes_{symbol}"):
                     thesis = st.text_area(text("Thesis"), value=entry.get("thesis", ""), key=f"holding_thesis_{symbol}")
                     st.caption(text("Notes are optional. Saving notes does not create a transaction or require a target price."))
-                    saved = st.form_submit_button(text("Save holding notes"), disabled=demo or cloud_readonly())
+                    saved = st.form_submit_button(text("Save holding notes"), disabled=demo or (cloud_readonly() and not editing_ready()))
                 if saved:
                     try:
-                        updated = load_config(config_path)
+                        updated = deepcopy(notes_base)
                         updated["watchlist"].setdefault(symbol, {"status": "watching"})["thesis"] = thesis
-                        save_config(config_path, updated)
+                        notice = save_watchlist_edit(config_path, notes_base, updated, hosted=cloud_readonly())
                         cached_snapshot.clear()
-                        st.session_state["_stockwatch_notice"] = "Holding notes saved locally."
+                        st.session_state["_stockwatch_notice"] = notice if cloud_readonly() else "Holding notes saved locally."
                         st.rerun()
                     except (ValidationError, OSError) as exc:
                         st.error(localized_error(exc) if isinstance(exc, ValidationError) else text("Save failed; original file preserved."))

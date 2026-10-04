@@ -11,7 +11,7 @@ PATTERNS = [
     re.compile(rb"AIza[A-Za-z0-9_-]{35}"),
     re.compile(rb"AKIA[A-Z0-9]{16}"),
     re.compile(rb"/Users/[A-Za-z0-9_.-]+/"),
-    re.compile(rb"(?:GMAIL_APP_PASSWORD|GITHUB_TOKEN)\s*[:=]\s*['\"][A-Za-z0-9]{16,}['\"]"),
+    re.compile(rb"(?:GMAIL_APP_PASSWORD|GITHUB_TOKEN|STOCKWATCH_CLOUD_TOKEN)\s*[:=]\s*['\"][A-Za-z0-9]{16,}['\"]"),
 ]
 PROHIBITED = (".stockwatch/", "data/", "logs/", "outputs/", ".venv/", ".streamlit/", ".cache/")
 

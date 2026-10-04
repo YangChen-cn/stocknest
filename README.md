@@ -338,6 +338,8 @@ Small record notes use existing transactions/history. A confirmed NAV high requi
 [Preview the redesigned daily email](docs/images/daily-email-demo.png) (synthetic Demo data).
 
 
-### Hosted read-only dashboard
+### Hosted dashboard and optional editing
 
 Deploy your own private copy to Streamlit Community Cloud and restrict viewer access to your email. Online Yahoo quotes remain the first choice; the hosted worker loads only the existing yfinance dependency. If online data fails, the dashboard uses a dated Actions market snapshot with an explicit non-live notice. Refresh retries online data. See the [cloud deployment guide](docs/cloud-dashboard.md) for setup and recovery. Market snapshots stay in your private repository and never update mail or alert state.
+
+Optional hosted editing allows watchlist entries, targets, alerts and holding notes to save directly to **your private repository**. Keep `STOCKWATCH_READONLY="1"`; configure `STOCKWATCH_CLOUD_REPOSITORY` and a dedicated, expiring `STOCKWATCH_CLOUD_TOKEN` with Contents read/write in Streamlit Secrets. Pull changes on your local Dashboard using **Settings → Sync with GitHub**. Same-field conflicts preserve drafts; transactions and automation remain read-only. Credentials never enter project files or logs. See the [cloud guide](docs/cloud-dashboard.md); this never writes personal data to the public example repository.

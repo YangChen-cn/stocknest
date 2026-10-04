@@ -514,3 +514,106 @@ def test_hosted_dashboard_saved_quotes_export_and_no_control_warning(app, monkey
     assert not (root / 'data/state.json').exists()
     assert app_test.get('download_button')[0].proto.label == 'Export current AI data (JSON)'
     assert json.loads((root / 'data/market_snapshot.json').read_text())['mode'] == 'CLOSE'
+
+
+@pytest.fixture
+def cloud_app(app, monkeypatch):
+    from copy import deepcopy
+    from stockwatch import ui, ui_cloud
+    from stockwatch.cloud_config import CloudConfigError, merge_watchlist
+    from stockwatch.portfolio import calculate, positions
+    from stockwatch.providers.base import Quote
+    from stockwatch.storage import validate_config, validate_transactions
+    monkeypatch.setenv('STOCKWATCH_READONLY', '1')
+    monkeypatch.setenv('STOCKWATCH_CLOUD_REPOSITORY', 'Example/private')
+    monkeypatch.setenv('STOCKWATCH_CLOUD_TOKEN', 'test_only')
+    remote = validate_config({'watchlist': {'XYZ': {'thesis': 'Cloud original'}}})
+    writes = []
+    class Read:
+        fail = False
+        def __call__(self, _repository):
+            if self.fail:
+                raise CloudConfigError('Cloud GitHub access failed. Check the dedicated token, its expiry and private repository Contents permission.')
+            return deepcopy(remote)
+        def clear(self):
+            pass
+    read = Read()
+    class Repo:
+        def __init__(self, _settings):
+            pass
+        def save_watchlist(self, base, desired):
+            remote['watchlist'] = merge_watchlist(base, desired, remote['watchlist'])
+            writes.append(deepcopy(remote))
+            return {'config': deepcopy(remote), 'changed': True}
+    monkeypatch.setattr(ui, 'cloud_config', read)
+    monkeypatch.setattr(ui_cloud, 'cloud_config', read)
+    monkeypatch.setattr(ui_cloud, 'CloudRepository', Repo)
+    def snapshot(config, rows, day, demo):
+        symbols = set(config['watchlist']) | {row['symbol'] for row in rows}
+        quotes = {symbol: Quote(symbol, price=20, previous_close=19) for symbol in symbols}
+        return calculate(positions(validate_transactions(rows), day), quotes), quotes
+    snapshot.clear = lambda: None
+    monkeypatch.setattr(ui, 'cached_snapshot', snapshot)
+    monkeypatch.setattr(ui, 'chart_prices', lambda *args, **kwargs: None)
+    return *app, remote, writes, read
+
+
+def test_cloud_watchlist_saves_github_only_and_conflicts_preserve_draft(cloud_app):
+    app_test, root, remote, writes, _ = cloud_app
+    before = (root / 'config.yaml').read_bytes()
+    app_test.run()
+    assert any('Cloud editing:' in item.value for item in app_test.info)
+    app_test.sidebar.radio[0].set_value('Watchlist & Alerts').run()
+    app_test.checkbox[0].set_value(True).run()
+    next(w for w in app_test.text_input if w.label == 'Symbol').set_value('XYZ').run()
+    assert next(w for w in app_test.text_input if w.label == 'Thesis').value == 'Cloud original'
+    next(w for w in app_test.text_input if w.label == 'Thesis').set_value('Draft note')
+    # The remote read changes while the form is open; its base stays frozen.
+    remote['watchlist']['XYZ']['thesis'] = 'Other device'
+    next(b for b in app_test.button if b.label == 'Save this stock').click().run()
+    assert not app_test.exception and app_test.error and not writes
+    assert next(w for w in app_test.text_input if w.label == 'Thesis').value == 'Draft note'
+    assert (root / 'config.yaml').read_bytes() == before
+    next(b for b in app_test.button if b.label == 'Reload cloud configuration (discard editor drafts)').click().run()
+    assert next(w for w in app_test.text_input if w.label == 'Thesis').value == 'Other device'
+    next(w for w in app_test.text_input if w.label == 'Thesis').set_value('Saved note')
+    remote['watchlist']['XYZ']['buy_below'] = 9  # Different field survives.
+    next(b for b in app_test.button if b.label == 'Save this stock').click().run()
+    assert not app_test.exception and len(writes) == 1
+    assert remote['watchlist']['XYZ']['thesis'] == 'Saved note'
+    assert remote['watchlist']['XYZ']['buy_below'] == 9
+    assert (root / 'config.yaml').read_bytes() == before
+    assert any('saved to GitHub' in item.value for item in app_test.success)
+
+
+def test_cloud_holding_notes_enabled_other_writes_disabled_and_demo_safe(cloud_app):
+    app_test, root, remote, writes, _ = cloud_app
+    save_transactions(root / 'data/transactions.csv', [{'date': '2026-09-28', 'symbol': 'XYZ', 'side': 'BUY', 'shares': '1', 'price': '10'}])
+    before = (root / 'config.yaml').read_bytes()
+    app_test.run()
+    assert app_test.toggle[0].disabled
+    app_test.sidebar.radio[0].set_value('Holdings').run()
+    next(w for w in app_test.text_area if w.label == 'Thesis').set_value('Holding note')
+    next(b for b in app_test.button if b.label == 'Save holding notes').click().run()
+    assert not app_test.exception and remote['watchlist']['XYZ']['thesis'] == 'Holding note'
+    assert len(writes) == 1 and (root / 'config.yaml').read_bytes() == before
+    app_test.sidebar.radio[0].set_value('Transactions').run()
+    assert next(b for b in app_test.button if b.label == 'Save transactions').disabled
+    app_test.sidebar.radio[0].set_value('Settings').run()
+    for label in ('Save settings', 'Sync with GitHub', 'Enable cloud daily workflow', 'Save report schedules'):
+        assert next(b for b in app_test.button if b.label == label).disabled
+    app_test.sidebar.toggle[0].set_value(True).run()
+    app_test.sidebar.radio[0].set_value('Watchlist & Alerts').run()
+    assert not app_test.exception
+    assert next(b for b in app_test.button if b.label == 'Save watchlist').disabled
+    assert len(writes) == 1
+
+
+def test_cloud_auth_failure_falls_back_to_readonly(cloud_app):
+    app_test, _, _, writes, read = cloud_app
+    read.fail = True
+    app_test.run()
+    app_test.sidebar.radio[0].set_value('Watchlist & Alerts').run()
+    assert not app_test.exception and app_test.warning
+    assert next(b for b in app_test.button if b.label == 'Save watchlist').disabled
+    assert not writes

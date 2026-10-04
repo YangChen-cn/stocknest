@@ -88,3 +88,17 @@ def test_public_github_sync_rejected_before_commit(repos, monkeypatch):
     with pytest.raises(SyncError, match="private GitHub"):
         sync(local)
     assert git(local, "rev-parse", "HEAD") == before
+
+
+def test_sync_pulls_cloud_watchlist_edit_alongside_local_transaction(repos):
+    from stockwatch.storage import load_config
+    local, other, _ = repos
+    (local / 'data/transactions.csv').write_text('date,symbol,side,shares,price,note\n2026-09-28,XYZ,BUY,1,10,Local\n')
+    (other / 'config.yaml').write_text('portfolio:\n  base_currency: USD\nwatchlist:\n  NEW:\n    thesis: Cloud note\n    status: watching\n')
+    git(other, 'add', 'config.yaml')
+    git(other, 'commit', '-m', 'cloud edit [skip ci]')
+    git(other, 'push', 'origin', 'main')
+    sync(local)
+    assert load_config(local / 'config.yaml')['watchlist']['NEW']['thesis'] == 'Cloud note'
+    assert 'XYZ' in (local / 'data/transactions.csv').read_text()
+    assert git(local, 'status', '--porcelain') == ''

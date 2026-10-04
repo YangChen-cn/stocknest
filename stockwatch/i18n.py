@@ -4,6 +4,21 @@ import re
 LANGUAGES = {"zh-CN": "简体中文", "en": "English"}
 
 ZH = {
+    'Cloud editing is not configured. Add the dedicated repository and token to Streamlit Secrets.': '云端编辑未配置；请在 Streamlit Secrets 中填写专用仓库和凭据。',
+    'Cloud repository must be owner/repository.': '云端仓库应填写为 owner/repository。',
+    'Cloud token has an invalid format. Check Streamlit Secrets.': '云端凭据格式无效，请检查 Streamlit Secrets。',
+    'Watchlist changed elsewhere: {field}. Your draft was not saved. Reload the latest configuration before editing again.': '观察列表的 {field} 已在另一端修改。本次未保存，草稿仍在；请重新载入最新配置后再编辑。',
+    'Invalid watchlist edit.': '观察列表修改无效。',
+    'GitHub configuration changed during saving. Nothing was overwritten; refresh the configuration and retry.': '保存期间 GitHub 配置发生了变化；未覆盖任何内容，请重新载入配置后重试。',
+    'Cloud GitHub access failed. Check the dedicated token, its expiry and private repository Contents permission.': '无法访问云端 GitHub，请检查专用凭据、有效期和私人仓库的 Contents 权限。',
+    'Cloud save could not be confirmed. Refresh the latest configuration before retrying.': '无法确认云端保存结果，请先重新载入最新配置再重试。',
+    'Cloud request failed or timed out. If saving, refresh the latest configuration to check whether it succeeded.': '云端请求失败或超时；若正在保存，请先重新载入最新配置，核对是否已经成功。',
+    'Cloud editing requires a verified private repository with default branch main.': '云端编辑仅支持已确认私有、默认分支为 main 的仓库。',
+    'GitHub configuration is invalid. No cloud changes were written.': 'GitHub 配置无效，未写入云端修改。',
+    'Reload cloud configuration (discard editor drafts)': '重新载入云端配置（放弃编辑草稿）',
+    'Watchlist saved to GitHub. Click Sync with GitHub on your local Dashboard to pull it.': '已保存到私人 GitHub。本机 Dashboard 点击「同步到 GitHub」即可拉取。',
+    'No new changes. GitHub already has this watchlist.': '没有新的修改，GitHub 已是相同的观察列表。',
+    'Cloud editing: watchlist and holding notes save directly to your private GitHub repository. Transactions and automation remain read-only. Pull changes with Sync with GitHub on your local Dashboard.': '云端可编辑关注股票、目标价、提醒和持仓笔记，保存直接写入私人 GitHub；交易与自动化仍只读。本机点击「同步到 GitHub」拉取修改。',
     "Daily times use New York time with automatic DST; weekly/monthly times use Hong Kong time.": "盘中、收盘按美东时间（自动适配夏令时）；周报、月报按香港时间。",
     "Time (Hong Kong)": "发送时间（香港）",
     "Every Saturday · Hong Kong time": "每周六发送（香港时间）",
