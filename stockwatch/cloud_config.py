@@ -82,7 +82,7 @@ class CloudRepository:
         # Never use credentials in URLs; raw responses/errors are not logged.
         try:
             request = Request(
-                f'https://api.github.com/repos/{self.settings.repository}/{path}',
+                f'https://api.github.com/repos/{self.settings.repository}' + (f'/{path}' if path else ''),
                 method=method,
                 data=json.dumps(body).encode() if body is not None else None,
                 headers={'Accept': 'application/vnd.github+json',

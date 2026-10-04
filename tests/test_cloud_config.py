@@ -24,7 +24,8 @@ class FakeGitHub:
     def __call__(self, request, timeout):
         self.requests.append(request)
         assert timeout == 15
-        assert request.full_url.startswith('https://api.github.com/repos/Example/private/')
+        root = 'https://api.github.com/repos/Example/private'
+        assert request.full_url == root or request.full_url.startswith(root + '/contents/config.yaml')
         if request.method == 'PUT':
             if self.failure:
                 raise self.failure
@@ -63,6 +64,7 @@ def test_cloud_write_merges_independent_fields_and_preserves_other_settings():
     assert fake.raw['watchlist']['OTHER']['thesis'] == 'Remote'
     for key in ('portfolio', 'notifications', 'imports'):
         assert fake.raw[key] == raw[key]
+    assert fake.requests[0].full_url == 'https://api.github.com/repos/Example/private'
     assert sum(req.method == 'PUT' for req in fake.requests) == 1
     assert all('test_only' not in req.full_url for req in fake.requests)
 
