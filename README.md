@@ -2,344 +2,154 @@
 
 # StockNest
 
-<p align="center">
-  <b>A lightweight, privacy-first, self-hosted US stock & ETF portfolio tracker and automated email reporter.</b>
-</p>
+**A lightweight, privacy-first US stock & ETF tracker that emails your portfolio every trading day — powered entirely by free GitHub Actions.**
 
-<p align="center">
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.11"></a>
-  <a href="https://streamlit.io/"><img src="https://img.shields.io/badge/Streamlit-1.38+-FF4B4B?style=flat-square&logo=streamlit&logoColor=white" alt="Streamlit"></a>
-  <a href="https://openbb.co/"><img src="https://img.shields.io/badge/Data-OpenBB%20%7C%20yfinance-00E5A3?style=flat-square" alt="OpenBB / yfinance"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg?style=flat-square" alt="License: AGPL-3.0"></a>
-  <a href="https://github.com/YangChen-cn/stocknest/actions"><img src="https://img.shields.io/badge/CI-Passing-brightgreen?style=flat-square&logo=githubactions&logoColor=white" alt="CI"></a>
-  <img src="https://img.shields.io/badge/Database-Zero%20(Plain%20Files)-orange?style=flat-square" alt="No DB">
-</p>
+[![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.38+-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![Data](https://img.shields.io/badge/Data-OpenBB%20%7C%20yfinance-00E5A3?style=flat-square)](https://openbb.co/)
+[![License](https://img.shields.io/badge/License-AGPL--3.0-blue.svg?style=flat-square)](LICENSE)
+[![CI](https://img.shields.io/badge/CI-Passing-brightgreen?style=flat-square&logo=githubactions&logoColor=white)](https://github.com/YangChen-cn/stocknest/actions)
+![No DB](https://img.shields.io/badge/Database-Zero%20(Plain%20Files)-orange?style=flat-square)
 
-<p align="center">
-  <a href="README.md"><b>English</b></a> &nbsp;•&nbsp; <a href="使用说明.md"><b>简体中文说明</b></a>
-</p>
+<a href="README.md"><b>English</b></a> • <a href="使用说明.md"><b>简体中文说明</b></a>
 
----
+<img src="docs/images/dashboard-demo.png" alt="StockNest dashboard" width="100%" />
 
 </div>
 
-**StockNest** is the public open-source edition of StockWatch, a clean personal US stock & ETF tracking workstation: free market data via OpenBB Platform & yfinance, a responsive local Streamlit dashboard, and automated email briefings powered by GitHub Actions.
+---
 
-> [!NOTE]
-> **No Brokerage Connection • No Database Server • No Paid Provider • No Auto-Trading**  
-> All portfolio records, settings, and performance histories are stored strictly in local CSV, JSON, and YAML files.
+## What is this?
+
+StockNest keeps a factual daily record of your US stock & ETF portfolio:
+
+- **Automated email reports** — intraday brief and end-of-day summary sent to your inbox by GitHub Actions, with alerts, watchlist moves and a machine-readable JSON attachment. No server to keep running.
+- **A local dashboard** (optional) — a Streamlit app on your own computer: holdings, performance vs. benchmark, watchlist, editable transaction ledger. Demo mode explores everything with synthetic data.
+- **Free & file-based** — OpenBB/yfinance quotes, plain CSV/YAML/JSON storage, no database, no paid data provider, no brokerage connection, no auto-trading.
+- **Bilingual** — every page and every email works in English or 简体中文.
+- **Factual only** — reports contain your positions and the alerts you configured. No news, no ratings, no investment advice.
 
 <div align="center">
-  <img src="docs/images/dashboard-demo.png" alt="StockNest Dashboard Demo" width="100%" />
+<table><tr>
+<td><img src="docs/images/performance-demo.png" alt="Performance" width="100%"/><sub>Performance vs. benchmark</sub></td>
+<td><img src="docs/images/daily-email-demo.png" alt="Daily email" width="100%"/><sub>Daily email report</sub></td>
+</tr></table>
 </div>
 
-*The dashboard is branded StockNest. Internal Python commands, report subjects and workflow names retain `stockwatch` / StockWatch for compatibility with private copies; the core implementation is shared.*
+## Quick start: email reports only (no local commands needed)
 
----
+The email pipeline runs completely on GitHub's free tier. Everything below happens in your browser.
 
-## 🚀 Quick Start
+> **Why private?** Your repo holds your real transactions and settings, and the report workflow only runs in private repositories. Free accounts include 2,000 Actions minutes/month — a daily report uses about 3–5.
 
-### 1. Prerequisites
-- **Python 3.11** (tested baseline).
+**1. Create your own private repository.**
+Click **Use this template** above the file list → create the repository, then open its **Settings → General → Danger Zone → Change visibility → Private**.
 
-### 2. Installation
+**2. Add three Secrets.**
+In your repository: **Settings → Secrets and variables → Actions → New repository secret**
+
+| Secret | Value |
+| --- | --- |
+| `GMAIL_ADDRESS` | The Gmail address that sends the reports |
+| `GMAIL_APP_PASSWORD` | A Gmail [App Password](https://support.google.com/accounts/answer/185833) (requires 2-Step Verification; not your normal password) |
+| `REPORT_EMAIL` | The inbox that receives the reports |
+
+**3. Enter your settings and first trade.** Two files, both editable on github.com:
+
+`config.yaml` — create it from [`config.example.yaml`](config.example.yaml). A minimal example:
+
+```yaml
+portfolio:
+  base_currency: USD
+  language: en                 # en / zh-CN
+  benchmark: SPY               # any US ticker, price return
+notifications:
+  email_enabled: true
+watchlist: {}                    # pure observation needs no targets or alerts
+reports:
+  INTRADAY: {enabled: true, time: "10:23", days: [0, 1, 2, 3, 4]}
+  CLOSE: {enabled: true, time: "18:53", days: [0, 1, 2, 3, 4]}
+```
+
+`data/transactions.csv` — one line per trade, NYSE session dates:
+
+```csv
+date,symbol,side,shares,price,note,fee
+2026-03-10,VTI,BUY,10,120.50,initial purchase,1.00
+```
+
+**4. Test run without sending.**
+**Actions → StockWatch Daily → Run workflow** → mode `CLOSE`, keep **Dry run** checked → **Run workflow**. The run log ends with a one-line summary such as `Report generated for …: N holdings, N new alerts, 0 tickers unavailable`. Dry runs never send email and never change alert state.
+
+**5. Go live.**
+Run again with **Dry run** unchecked — the report lands in `REPORT_EMAIL`. Scheduled runs are already built in: **10:23** (intraday brief) and **18:53** (closing report), US Eastern, Monday–Friday, holidays skipped. Only want the closing email? Set `INTRADAY: {enabled: false}` in `config.yaml`. Times are approximate (GitHub schedules can drift a few minutes); see below for exact-time scheduling.
+
+That's it. From now on your repo maintains itself: each report run persists alert state and performance history back to your repository.
+
+## Optional: local dashboard
 
 ```sh
-# 1. Clone repository
-git clone https://github.com/YangChen-cn/stocknest.git
-cd stocknest
-
-# 2. Setup virtual environment
-python3.11 -m venv .venv
-source .venv/bin/activate
-
-# 3. Install locked dependencies
-python -m pip install -r requirements.lock
-python -m pip install --no-deps -e .
-
-# 4. Start local dashboard
+git clone https://github.com/YangChen-cn/stocknest.git && cd stocknest
+python3.11 -m venv .venv && source .venv/bin/activate
+python -m pip install -r requirements.lock && python -m pip install --no-deps -e .
 streamlit run app.py --server.address 127.0.0.1
 ```
 
-Open `http://127.0.0.1:8501` in your browser. Toggle **Demo mode** in the sidebar to explore offline with synthetic tickers (`CORE`, `TECH`, `VALUE`, `CAND`) without network requests or private data.
-
----
-
-## 📝 Portfolio Configuration
-
-The app automatically initializes an empty `config.yaml` from `config.example.yaml` and an empty `data/transactions.csv` on first use (both are excluded by Git). To initialize manually:
-
-```sh
-cp config.example.yaml config.yaml
-mkdir -p data
-cp examples/transactions.example.csv data/transactions.csv
-```
-
-### Transactions CSV (`data/transactions.csv`)
-
-Record trades directly via the **Transactions** tab in the UI or by editing the CSV file:
-
-| date | symbol | type | shares | price | fee | notes |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `2026-03-10` | `NVDA` | `BUY` | `10` | `120.50` | `1.00` | Initial purchase |
-| `2026-03-15` | `AAPL` | `BUY` | `20` | `185.00` | `0.00` | Core position |
-| `2026-03-20` | `NVDA` | `SELL` | `5` | `135.00` | `1.00` | Partial profit take |
-
-*Dates use NYSE trading sessions. Legacy 6-column CSV files remain fully supported (`fee` defaults to 0).*
-
-### Configuration (`config.yaml`)
-
-```yaml
-benchmark: SPY
-timezone: America/New_York
-language: en  # 'en' or 'zh'
-
-watchlist:
-  - symbol: MSFT
-    target_price: 450.0
-    notes: Long-term cloud growth
-  - symbol: QQQ
-
-notifications:
-  email_enabled: true
-  price_alert_threshold: 0.03
-```
-
----
-
-## 📊 Performance & Methodology
-
-- **Dashboard & Holdings**: Real-time valuation, cost basis, daily movements, unrealized P/L, portfolio allocation weights, interactive Plotly charts, and editable per-holding notes/theses.
-- **Watchlist & Alerts**: Pure observation requires no price target or alert. Targets and alerts are optional; all watched stocks appear in a compact closing summary. Intraday emails highlight notable moves (≥5%), near targets, and triggered alerts.
-- **Historical Performance**: Historical market value, cash-flow-adjusted index, benchmark comparison (default `SPY`), average-cost realized P/L, and fee accounting.
+Open `http://127.0.0.1:8501`. First run creates `config.yaml` and an empty `data/transactions.csv` for you; toggle **Demo mode** in the sidebar to explore offline first. The dashboard binds to localhost only and has no built-in authentication — it is not meant to be exposed directly to the internet.
 
 <div align="center">
-  <img src="docs/images/performance-demo.png" alt="StockNest Performance Analysis" width="100%" />
+<table><tr>
+<td><img src="docs/images/watchlist-demo.png" alt="Watchlist" width="100%"/><sub>Watchlist &amp; alerts</sub></td>
+<td><img src="docs/images/performance-mobile-demo.png" alt="Mobile" width="100%"/><sub>Mobile layout</sub></td>
+</tr></table>
 </div>
 
-### Return & Accounting Principles
+## Optional: hosted dashboard (Streamlit Community Cloud)
 
-- **Cash Flow Accounting**: Buys count as capital contributions; net sales count as withdrawals. No idle cash account is tracked.
-- **Daily Return Formula**:
-  $$\text{Daily Return} = \frac{\text{End Market Value} + \text{Net Sales}}{\text{Previous Market Value} + \text{Buy Cost}} - 1$$
-  Compounded daily into a money-weighted return index starting at $100.0$.
-- **Approximations**: Buys are assumed at day start and sales at day end (daily approximation). Buy costs include fees; sale proceeds exclude fees.
-- **Realized P/L**: Calculated using the **Average Cost** method across multiple buys/sells. Fees are deducted exactly once.
-- **Data Integrity & Windows**:
-  - **5D** spans five NYSE sessions, using six closing prices.
-  - **1M / 1Y** windows roll back calendar months and choose the trading session on or before the boundary.
-  - Histories use completed closes and exact anchors. Missing data leaves gaps; relevant splits block historical calculation rather than inventing share adjustments.
-  - Benchmark uses **price** return. Dividends, taxes, automatic corporate actions, and XIRR are excluded.
+Deploy your **private** repo to [Streamlit's free hosting](https://share.streamlit.io) and check your portfolio from any browser, even with your computer off. The hosted app runs read-only by default (one `STOCKWATCH_READONLY` secret), falls back to a market snapshot committed by the Actions runs when Yahoo is unreachable, and can optionally allow watchlist/notes edits with a dedicated GitHub token. Full guide: [docs/cloud-dashboard.md](docs/cloud-dashboard.md).
 
----
+## Optional features
 
-## 🎯 Watchlist & UI Showcase
+| Feature | What it does | Where |
+| --- | --- | --- |
+| HSBC execution import | Reads fully-executed USD trade confirmations from Gmail (read-only IMAP), deduplicated by trade ID | [使用说明 · 自动导入汇丰成交](使用说明.md) |
+| Weekly / monthly summaries | Saturday / first-weekend-day reports with period returns, flows and fees | Enable in `reports:` config, run manually via Actions, or automate below |
+| cron-job.org scheduler | Exact New York trigger times and weekly/monthly automation (GitHub's own schedule stays fixed-time) | [使用说明 · cron-job.org 外部自动调度](使用说明.md) |
+| AI-readable JSON | Every email carries a versioned JSON block + attachment; dashboard exports a live snapshot | [使用说明 · 用 GPT / Gmail 分析日报](使用说明.md) |
+| macOS login startup | Auto-start the local dashboard at login via launchd | [使用说明 · 本机 Gmail 与登录自启](使用说明.md) |
 
-<div align="center">
+## How the numbers are computed
 
-| Desktop Watchlist & Alerts | Mobile Responsive View |
-| :---: | :---: |
-| <img src="docs/images/watchlist-demo.png" alt="Desktop Watchlist & Alerts" width="680" /> | <img src="docs/images/performance-mobile-demo.png" alt="Mobile View" width="220" /> |
+- **Average cost**: buy fees join the cost basis; partial sales realize `proceeds − sell fee − removed cost`; fees are never deducted twice. This is not tax-lot accounting.
+- **Flow-adjusted performance**: buys are treated as contributions and net sales as withdrawals — invested cash is never mistaken for profit. Daily return `= (end value + net sales) / (previous value + buys) − 1`, compounded into an index starting at 100 (buys at day start, sales at day end — a stated daily approximation).
+- **Honest windows**: 5D spans five NYSE sessions (six closes); monthly/yearly windows roll back the calendar to the session on or before the boundary. Missing data shows as unavailable — never zero-filled, never bridged. A relevant stock split blocks historical calculation instead of inventing adjustments.
+- **Benchmark**: split-adjusted **price** return of any US ticker you choose. Dividends, idle cash, XIRR, taxes and corporate actions are excluded.
 
-</div>
+The full methodology (in Chinese, matching every formula in the code) is in [使用说明.md](使用说明.md).
 
----
+## Privacy model
 
-## 📬 Automated Reports & Gmail
+- `config.yaml`, `data/` (transactions, alert state, performance history) are **ignored by Git** in this public repo. Real data belongs only in your own **private** repository.
+- The report workflow refuses to run in public repositories, and the dashboard's sync feature verifies privacy before pushing anything.
+- Reports carry facts and your configured alerts — no credentials, no broker data, no advice. The AI JSON attachment explicitly excludes secrets, addresses and your full trade ledger.
 
-```sh
-# Completely offline demo dry-run (no email, no state change)
-python -m stockwatch.daily --demo --dry-run
-
-# Live closing preview with your local data (terminal preview, no mail sent)
-python -m stockwatch.daily --dry-run
-
-# Rebuild historical performance index in dry-run mode
-python -m stockwatch.daily --rebuild-performance --dry-run
-```
-
-Normal reports read `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`, `REPORT_EMAIL` from environment variables. Gmail requires an [App Password](https://support.google.com/accounts/answer/185833); never write it into YAML, CSV or a commit. Missing settings skip sending. Disabling `notifications.email_enabled` still generates reports/history and leaves alerts pending. SMTP failures preserve reports and do not consume notifications.
-
-Only **CLOSE** writes `data/performance.json`; **INTRADAY** reads the previous close. Alert state is separate per mode. Repeated successful reports for the same session/mode skip email unless forced. Dry-run/demo never change personal state/history.
-
----
-
-## ☁️ GitHub Actions: Private Repository Setup
-
-> [!WARNING]
-> **The public source repository does not run portfolio automation.**  
-> CI checks shared code in the public repository. `daily.yml` explicitly skips public repositories because logs/artifacts could reveal personal portfolio information. Do not enable portfolio automation in a public fork or commit real data there.
-
-For personal automation, create a **private** repository from this clean source. Change `origin` to that private repository, verify its visibility, and commit your personal files:
+## Development
 
 ```sh
-# 1. Check private repository visibility
-gh auth login
-gh api repos/YOUR_ACCOUNT/YOUR_PRIVATE_REPO --jq '.private'
-# Continue only when the result is true.
-
-# 2. Stage and push personal inputs
-git add -f config.yaml data/transactions.csv
-git commit -m "chore: configure personal portfolio"
-git push origin main
-```
-
-The UI sync button also checks GitHub repository privacy before committing. It commits only config/transactions/import audit (never local Gmail), pulls remote history/state, and preserves conflicts.
-
-GitHub Actions schedules may be delayed or skipped; you can use free [cron-job.org](https://cron-job.org/en/) to [trigger the workflow externally](#external-scheduling-with-cron-joborg).
-
-### Workflow Configuration
-1. **Repository Secrets**: Add `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`, and `REPORT_EMAIL`.
-2. **Schedules**: Default **UTC** cron preserves New York **10:23** (Intraday) and **18:53** (Close). Intraday candidates are 14:23 / 15:23 UTC Mon–Fri; Close candidates are 22:53 / 23:53 UTC Mon–Fri. Dependency-free preflight chooses EDT/EST before installing runtime packages; inactive slots send nothing and change no state. Logs show UTC/New York execution times and source cron. Delayed valid runs still pass through NYSE session checks and email deduplication. Holidays, weekends and early closes remain calendar-gated. GitHub can delay or drop schedules; UTC does not guarantee punctual delivery ([GitHub documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)).
-3. **State Persistence**: In a private copy only, the bot commits `state.json`, `performance.json`, and (when HSBC imports exist) `transactions.csv` / `hsbc_imports.json` with `[skip ci]`.
-4. **Crash Recovery**: 3-day private artifacts contain logs and recovery files. If sending succeeds but pushing fails, restore the affected artifact files before rerunning.
-
----
-
-## 🔄 Close-Data Retry & HSBC Execution Sync
-
-### Close-Data Retry Engine
-CLOSE checks all configured holdings/watchlist quotes for the target NYSE session and a valid previous close before delivery. Missing or stale quotes cause up to **three checks, two minutes apart** (`--close-attempts 1..3`, `--close-retry-seconds 60..180`).
-
-No partial daily report is sent during this wait. Exhaustion sends one error notification per session and exits nonzero; price alerts and the regular report remain pending. A later run can send the recovered report.
-
-### HSBC Trade Execution Sync (Optional)
-Enable **HSBC execution sync** in Settings, or configure:
-
-```yaml
-imports:
-  hsbc:
-    enabled: true
-    allow_email_date: true
-    lookback_days: 3
-```
-
-- **Authentication & Parsing**: Uses read-only Gmail IMAP. Accepts official Traditional Chinese **fully executed** USD confirmations with DKIM/DMARC authentication. Partial/cancelled/unknown confirmations are skipped.
-- **Trade Date**: Uses email Date converted to America/New_York when absent. Delayed emails can require manual date adjustment; disable `allow_email_date` to skip them instead. Non-session dates are never guessed.
-- **Deduplication**: Trade IDs are preserved in CSV notes as `[HSBC:ID]` and in `data/hsbc_imports.json`.
-
-```sh
-python -m stockwatch.daily --sync-only --dry-run  # read and preview; no writes/mail
-python -m stockwatch.daily --sync-only            # import only; no report/mail
-python -m stockwatch.daily --skip-hsbc --dry-run  # skip Gmail access
-```
-
----
-
-## ⚡ UI Performance & Closed-Market Cache
-
-- **Search & Selection**: Stock search runs upon pressing Enter or leaving the input. New results replace the previous selection. Only the selected instrument's latest price, day move, 52-week range and date are fetched.
-- **Holding Thesis / Notes**: Editable thesis notes appear in both text and HTML emails; blank notes are omitted and HTML is escaped.
-- **Closed-Market Cache**: Outside active NYSE sessions, Dashboard and Watchlist reuse validated daily bars in `.cache/market/`. The cache survives page navigation and restarts, expiring when a newer completed NYSE session exists. Regular-session prices retain a 5-minute memory cache. Click **Refresh market data** to clear the cache.
-
----
-
-## 🤖 AI / LLM Analysis Integration
-
-Every generated email and dashboard view provides machine-readable structured financial data:
-
-1. **Email Reports**: Formatted with HTML/text plus an attached UTF-8 JSON file (`stockwatch-YYYY-MM-DD-close.json`) and an inline `STOCKWATCH_DATA_V1` payload.
-2. **Dashboard Export**: Click **Export current AI data (JSON)** on the Dashboard or Watchlist page to download an instant snapshot.
-
-> **💡 Sample AI Prompt**:  
-> *"Read the JSON attachment of my latest StockWatch report (fall back to the STOCKWATCH_DATA_V1 block in the plain-text part if needed). Compare it with the previous report, analyze portfolio performance vs SPY benchmark, explain individual price changes and configured alerts. Distinguish my thesis notes from objective market facts."*
-
----
-
-## 🍎 macOS Login Background Service (`launchd`)
-
-No service is enabled automatically. Register next-login startup while the current Dashboard continues running:
-
-```sh
-python -m stockwatch.control install
-python -m stockwatch.control status
-python -m stockwatch.control start
-python -m stockwatch.control stop
-python -m stockwatch.control uninstall
-```
-
-This per-user launchd service starts the local-only Dashboard **after login**. The generated plist is in `~/Library/LaunchAgents/`; logs stay in `logs/`.
-
----
-
-## 🧪 Testing & Privacy Checks
-
-```sh
-# Run comprehensive test suite
-python -m pytest
-
-# Validate dependencies
+python -m pytest        # offline suite: fake providers, fake SMTP, temp git repos
 python -m pip check
-
-# Public release compliance scan
-python tools/check_public_release.py
+python -m stockwatch.daily --demo --dry-run   # offline preview with synthetic data
 ```
 
-`.gitignore` excludes local config, `data/`, Secrets, environments, reports, logs, and caches. Never use `git add -f` for personal files in a public repository. See [public-release checks](PUBLIC_RELEASE_CHECK.md).
+`ci.yml` runs tests on push/PR. `daily.yml` handles schedules, state persistence and recovery artifacts; report runs skip holidays and early closes, retry missing closes up to three times, and isolate per-ticker failures. Architecture notes live in the module docstrings; release history in [docs/releases](docs/releases).
 
----
+## Honest limitations
 
-## 📄 License
+- Free Yahoo data can be delayed, missing or rate-limited; failed tickers are reported, never zero-filled.
+- GitHub's native schedule is not exact-time delivery; cron-job.org integration adds precision but is still not a guarantee.
+- SMTP and Git are not atomic; a crash between sending and persisting can re-send once. Recovery artifacts are kept for three days.
+- This project records and reports. It does not advise.
 
-This project is licensed under the **[GNU AGPL-3.0-only](LICENSE)**. Dependencies retain their respective licenses.
+## License
 
-
-## External scheduling with cron-job.org
-
-Use two weekday jobs in `America/New_York`: **10:23 INTRADAY** and **18:53 CLOSE** (Hong Kong EDT: 22:23 / next day 06:53; EST: 23:23 / next day 07:53). DST is handled by cron-job.org. Python still checks NYSE sessions, holidays and early closes; email deduplication and recovery remain unchanged.
-
-Create both jobs disabled first. POST to `https://api.github.com/repos/OWNER/PRIVATE_REPO/actions/workflows/daily.yml/dispatches`. Headers: `Accept: application/vnd.github+json`, `Content-Type: application/json`, `Authorization: Bearer YOUR_FINE_GRAINED_TOKEN`, `X-GitHub-Api-Version: 2022-11-28`. Use a dedicated expiring fine-grained token restricted to the private repository with **Actions: write**; enter it directly in cron-job.org, never in project files or chat. Gmail Secrets remain on GitHub. Keep response storage off.
-
-Body for Intraday (replace mode with `CLOSE` for the second job):
-
-```json
-{"ref":"main","inputs":{"mode":"INTRADAY","scheduled":true}}
-```
-
-For a no-email test, temporarily add `"dry_run":true`, run the cron-job.org test, and inspect the matching Actions run. HTTP success only confirms dispatch; it does not mean the report completed. Outside an active session, Intraday skips, and scheduled Close skips when New York has no completed session that day. Restore normal payload after testing and enable both jobs. Then set the private repository Actions variable `STOCKWATCH_SCHEDULER=cron-job.org`; this skips native scheduled jobs before allocating a runner. Manual/externally dispatched runs stay enabled. Remove that variable to restore native UTC scheduling. Disabling the workflow itself also blocks external dispatch. Check cron-job.org history and Actions separately; expired/revoked tokens require renewal. External dispatch still uses private Actions minutes and may face runner queues.
-
-## Optional weekly/monthly reports and adjustable schedules
-
-Open **Dashboard / Settings → Report schedules** to switch INTRADAY, CLOSE, WEEKLY and MONTHLY independently, choose New York time and Monday–Friday delivery days for INTRADAY/CLOSE (automatic DST). Weekly/monthly are off by default, with time-only controls in Hong Kong time, default **10:52**. Weekly sends every Saturday using the week’s final completed NYSE close, including weeks with Friday holidays. Monthly sends on the first weekend day of the month (Sunday the 1st if applicable, otherwise the first Saturday), using the previous month’s final NYSE close. Manual workflow runs can generate a missed summary; same period is deduplicated unless force-send is selected. The global email switch still controls every report.
-
-Weekly/monthly include cash-flow-adjusted holdings returns, benchmark price returns, period P/L, contributions/withdrawals, realized P/L, fees, current holdings and a JSON attachment. They exclude dividends/cash and never check or consume daily alert state. Missing required portfolio history/closing prices withholds the summary; benchmark-only failure does not block it. If your first purchase is inside the period, comparison begins at that portfolio's baseline. Summaries calculate without overwriting formal performance history.
-
-**Saving settings locally does not change cron-job.org trigger times.** For Dashboard control of cloud time:
-
-1. In cron-job.org **Settings → API keys**, create a management Key. Store it only in the private GitHub repository's Actions Secret **`CRONJOB_API_KEY`**, never in config or chat. This is separate from the dedicated GitHub Actions-write token already in your external job headers.
-2. Keep at least one authorized cron-job.org task pointing at your own repository's `daily.yml` dispatch endpoint, with `ref=main`, a valid report `mode` and `scheduled=true`.
-3. Save report settings, then click **Sync and apply cloud schedules**. Check **Actions → Apply report schedules** for success. This commits only the existing editable-file whitelist, then updates matching external jobs and creates enabled weekly/monthly jobs, preserving dispatch headers in memory.
-
-The [cron-job.org management API](https://docs.cron-job.org/rest-api.html) allows 100 requests/day by default; settings synchronization uses a small number of requests only when clicked. It is not a new background polling service. The scheduler workflow runs only in private repositories and installs only PyYAML. Daily dispatch preflight skips disabled/already-sent slots before installing OpenBB. Monthly external jobs check weekend days 1–7; lightweight preflight selects the first weekend day and successful-period deduplication prevents repeats. Weekend delivery does not require a NYSE session that day; all prices remain completed-session closes. If multiple job updates partially fail, inspect cron-job.org and rerun apply; changes are not atomic.
-
-Native GitHub cron remains a **fixed-time fallback** and does not acquire custom hours or weekly/monthly triggers from YAML. Custom cloud times and periodic automatic delivery require the external scheduler to be configured successfully. Cloud runner/market-data/SMTP delays remain possible.
-
-```sh
-python -m stockwatch.daily --mode WEEKLY --demo --dry-run
-python -m stockwatch.daily --mode MONTHLY --demo --dry-run
-```
-
-The local Dashboard hides Streamlit’s developer/deployment menu using the supported `client.toolbarMode="minimal"` setting; it does not deploy or publish your portfolio.
-
-Maintenance notes in `AGENTS.md` / `agents.md` are local-only and excluded from Git. Shared setup and usage documentation remains in this README and the Chinese usage guide.
-
-If an updated Dashboard still displays old controls, its background Python process may retain imported modules. Stop the managed service (`python -m stockwatch.control stop`), wait for it to exit, start it (`python -m stockwatch.control start`), then reload the browser.
-
-## Release notes
-
-See [v1.0.0 release notes](docs/releases/v1.0.0.md) for changes since v0.1.0.
-
-## A calmer daily view
-
-The dashboard and all four email reports share a warm, restrained layout. Holdings and price trends come first; report settings and optional editing stay collapsed. Refresh and AI export sit beside the page title. On a phone, metrics use a compact two-column layout and wide tables remain scrollable.
-
-Small record notes use existing transactions/history. A confirmed NAV high requires continuous, current history; missing or stale data never earns a new-high message. Intraday estimates are explicitly labelled. High-water-mark distance remains on Performance, while short original closing lines add context without forecasts or trading advice. Zero and unavailable values stay neutral. No additional market requests, dependencies or configuration are required.
-
-[Preview the redesigned daily email](docs/images/daily-email-demo.png) (synthetic Demo data).
-
-
-### Hosted dashboard and optional editing
-
-Deploy your own private copy to Streamlit Community Cloud and restrict viewer access to your email. Online Yahoo quotes remain the first choice; the hosted worker loads only the existing yfinance dependency. If online data fails, the dashboard uses a dated Actions market snapshot with an explicit non-live notice. Refresh retries online data. See the [cloud deployment guide](docs/cloud-dashboard.md) for setup and recovery. Market snapshots stay in your private repository and never update mail or alert state.
-
-Optional hosted editing allows watchlist entries, targets, alerts and holding notes to save directly to **your private repository**. Keep `STOCKWATCH_READONLY="1"`; configure `STOCKWATCH_CLOUD_REPOSITORY` and a dedicated, expiring `STOCKWATCH_CLOUD_TOKEN` with Contents read/write in Streamlit Secrets. Pull changes on your local Dashboard using **Settings → Sync with GitHub**. Same-field conflicts preserve drafts; transactions and automation remain read-only. Credentials never enter project files or logs. See the [cloud guide](docs/cloud-dashboard.md); this never writes personal data to the public example repository.
+[AGPL-3.0](LICENSE)
