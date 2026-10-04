@@ -302,6 +302,22 @@ def test_close_report_milestone_all_time_high_and_drawdown():
     assert "历史新高" not in intraday.text and "🎉" not in intraday.subject
 
 
+def test_report_epigraph_rotates_by_day_and_language():
+    from stockwatch.i18n import QUOTES
+    from stockwatch.portfolio import calculate
+    book = calculate({}, {})
+    zh = {"portfolio": {"language": "zh-CN"}, "watchlist": {}}
+    en = {"portfolio": {"language": "en"}, "watchlist": {}}
+    first = render_report(DAY, book, {}, zh, [])
+    expected_zh = "「" + QUOTES[DAY.toordinal() % len(QUOTES)][0] + "」"
+    assert expected_zh in first.text and expected_zh in first.html
+    english = render_report(DAY, book, {}, en, [])
+    expected_en = "“" + QUOTES[DAY.toordinal() % len(QUOTES)][1] + "”"
+    assert expected_en in english.text and expected_en in english.html
+    other = render_report(date(2026, 10, 5), book, {}, zh, [])
+    assert "「" + QUOTES[date(2026, 10, 5).toordinal() % len(QUOTES)][0] + "」" in other.text
+
+
 def test_intraday_watchlist_empty_one_and_stable_ties():
     from stockwatch.reports import intraday_watchlist_highlights
     config = {"watchlist": {"A": {}, "B": {}}}

@@ -359,6 +359,20 @@ ZH.update({
     "intraday estimate": "盘中估算",
 })
 
+# Rotating report epigraphs — patience, accumulation and composure, never advice.
+QUOTES = (
+    ("不积跬步，无以至千里。", "Little by little, one travels far."),
+    ("不积小流，无以成江海。", "Small streams gather into the sea."),
+    ("水滴石穿，非一日之功。", "Constant dripping wears away the stone."),
+    ("静水流深。", "Still waters run deep."),
+    ("风物长宜放眼量。", "Measure the view with a long lens."),
+    ("路遥知马力，日久见功力。", "Distance tests the horse; time proves the strength."),
+    ("岁不寒，无以知松柏。", "Only winter reveals the evergreen."),
+    ("长风破浪会有时。", "A long wind will lift the sails in time."),
+    ("每临大事有静气。", "Composure carries the moment."),
+    ("工欲善其事，必先利其器。", "Sharpen the tool before the work begins."),
+)
+
 def language(config: dict) -> str:
     return config.get("portfolio", {}).get("language", "en")
 
