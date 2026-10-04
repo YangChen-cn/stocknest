@@ -97,7 +97,10 @@ class CloudRepository:
             if exc.code == 409:
                 raise CloudConfigError('GitHub configuration changed during saving. Nothing was overwritten; refresh the configuration and retry.') from None
             if exc.code in (401, 403, 404):
-                raise CloudConfigError('Cloud GitHub access failed. Check the dedicated token, its expiry and private repository Contents permission.') from None
+                raise CloudConfigError(
+                    'Cloud GitHub access failed (HTTP {status}, {resource}). Check the dedicated token, its expiry, repository selection and Contents permission.',
+                    status=exc.code, resource='config.yaml' if path else 'repository',
+                ) from None
             raise CloudConfigError('Cloud save could not be confirmed. Refresh the latest configuration before retrying.') from None
         except (OSError, URLError, ValueError, TimeoutError):
             raise CloudConfigError('Cloud request failed or timed out. If saving, refresh the latest configuration to check whether it succeeded.') from None

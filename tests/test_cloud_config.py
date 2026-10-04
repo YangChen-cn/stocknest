@@ -131,7 +131,7 @@ def test_invalid_input_rejected_before_requests():
         repository(fake).read_config()
 
 
-@pytest.mark.parametrize('code,message', [(409, 'changed during saving'), (403, 'access failed'), (500, 'could not be confirmed')])
+@pytest.mark.parametrize('code,message', [(409, 'changed during saving'), (401, 'HTTP 401, config.yaml'), (403, 'HTTP 403, config.yaml'), (500, 'could not be confirmed')])
 def test_upstream_failures_never_echo_secrets(code, message, caplog):
     fake = FakeGitHub()
     fake.failure = HTTPError('https://example.invalid/test_only', code, 'test_only', {}, io.BytesIO(b'test_only'))

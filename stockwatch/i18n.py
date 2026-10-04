@@ -10,6 +10,7 @@ ZH = {
     'Watchlist changed elsewhere: {field}. Your draft was not saved. Reload the latest configuration before editing again.': '观察列表的 {field} 已在另一端修改。本次未保存，草稿仍在；请重新载入最新配置后再编辑。',
     'Invalid watchlist edit.': '观察列表修改无效。',
     'GitHub configuration changed during saving. Nothing was overwritten; refresh the configuration and retry.': '保存期间 GitHub 配置发生了变化；未覆盖任何内容，请重新载入配置后重试。',
+    'Cloud GitHub access failed (HTTP {status}, {resource}). Check the dedicated token, its expiry, repository selection and Contents permission.': '无法访问云端 GitHub（HTTP {status}，{resource}）；请检查专用凭据、有效期、所选仓库及 Contents 权限。',
     'Cloud GitHub access failed. Check the dedicated token, its expiry and private repository Contents permission.': '无法访问云端 GitHub，请检查专用凭据、有效期和私人仓库的 Contents 权限。',
     'Cloud save could not be confirmed. Refresh the latest configuration before retrying.': '无法确认云端保存结果，请先重新载入最新配置再重试。',
     'Cloud request failed or timed out. If saving, refresh the latest configuration to check whether it succeeded.': '云端请求失败或超时；若正在保存，请先重新载入最新配置，核对是否已经成功。',
