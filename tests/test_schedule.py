@@ -54,7 +54,9 @@ def test_preflight_output(tmp_path, monkeypatch, cron, manual, expected):
             return datetime.fromisoformat("2026-10-01T17:00:00+00:00").astimezone(tz)
     monkeypatch.setattr(schedule, "datetime", FixedClock)
     output = tmp_path / "output"
-    monkeypatch.setattr(sys, "argv", ["schedule", "--cron", cron, "--mode", manual, "--github-output", str(output)])
+    config = tmp_path / "config.yaml"
+    config.write_text("watchlist: {}\n", encoding="utf-8")  # Never read the developer's real config.
+    monkeypatch.setattr(sys, "argv", ["schedule", "--cron", cron, "--mode", manual, "--config", str(config), "--github-output", str(output)])
     assert main() == 0
     assert output.read_text() == f"should_run={str(bool(expected)).lower()}\nmode={expected}\n"
 
@@ -95,3 +97,35 @@ def test_scheduler_trigger_skips_only_native_slots(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["schedule", "--cron", "23 14 * * 1-5", "--config", str(native), "--github-output", str(native_out)])
     assert schedule.main() == 0
     assert "should_run=true" in native_out.read_text()
+
+
+def test_external_dispatch_requires_external_trigger(tmp_path, monkeypatch):
+    import stockwatch.schedule as schedule
+    native = tmp_path / "native.yaml"
+    native.write_text("watchlist: {}\n", encoding="utf-8")
+    double = tmp_path / "double.yaml"
+    double.write_text('scheduler:\n  trigger: "cron-job.org"  # dashboard switch\n', encoding="utf-8")
+    single = tmp_path / "single.yaml"
+    single.write_text("scheduler:\n  trigger: 'cron-job.org'\n", encoding="utf-8")
+    assert schedule.configured_trigger(double) == "cron-job.org"
+    assert schedule.configured_trigger(single) == "cron-job.org"
+
+    class FixedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.fromisoformat("2026-10-01T23:00:00+00:00").astimezone(tz)
+    monkeypatch.setattr(schedule, "datetime", FixedClock)
+    # scheduled=true dispatches are ignored unless the external trigger is selected.
+    skipped = tmp_path / "skipped"
+    monkeypatch.setattr(sys, "argv", ["schedule", "--mode", "CLOSE", "--scheduled", "--config", str(native), "--github-output", str(skipped)])
+    assert schedule.main() == 0
+    assert "should_run=false" in skipped.read_text()
+    allowed = tmp_path / "allowed"
+    monkeypatch.setattr(sys, "argv", ["schedule", "--mode", "CLOSE", "--scheduled", "--config", str(double), "--github-output", str(allowed)])
+    assert schedule.main() == 0
+    assert "should_run=true\nmode=CLOSE\n" in allowed.read_text()
+    # Manual runs (scheduled=false) ignore the switch entirely.
+    manual = tmp_path / "manual"
+    monkeypatch.setattr(sys, "argv", ["schedule", "--mode", "CLOSE", "--config", str(native), "--github-output", str(manual)])
+    assert schedule.main() == 0
+    assert "should_run=true\nmode=CLOSE\n" in manual.read_text()

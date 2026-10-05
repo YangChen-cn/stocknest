@@ -116,3 +116,17 @@ def test_daily_import_caps_historical_window_to_three_days(portfolio_files):
     assert run(**portfolio_files,dry_run=True,importer=importer)==0
     assert captured==[3]
     assert load_config(portfolio_files["config_path"])["imports"]["hsbc"]["lookback_days"]==30
+
+
+def test_weekly_hsbc_failure_keeps_the_real_mode_in_subject_json_and_filename(portfolio_files, monkeypatch):
+    import json
+    credentials(monkeypatch)
+    def failing_importer(config, transactions, import_state, dry_run=False):
+        raise HSBCSyncError("sync unavailable")
+    sent = []
+    assert run(**{**portfolio_files, "provider": FakeProvider()}, mode="WEEKLY",
+                importer=failing_importer, sender=lambda *a: sent.append(a[0])) == 2
+    assert len(sent) == 1 and "WEEKLY" in sent[0].subject and "CLOSE" not in sent[0].subject
+    assert sent[0].data_filename == "stockwatch-2026-10-06-weekly-error.json"
+    assert json.loads(sent[0].data_json)["mode"] == "WEEKLY"
+    assert load_state(portfolio_files["state_path"])["_meta"]["last_hsbc_error_weekly_session"] == DAY.isoformat()

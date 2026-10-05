@@ -34,8 +34,10 @@ def api(method, path, payload=None):
         raise SchedulerError('cron-job.org request failed; check the management Key, quota and job status.') from None
 
 
-def apply(config, repository, request=api, sleeper=time.sleep):
+def apply(config, repository, *, desired='cron-job.org', request=api, sleeper=time.sleep):
     import re
+    if desired not in ('native', 'cron-job.org'):
+        raise SchedulerError('Invalid scheduler trigger.')
     if not re.fullmatch(r'[\w.-]+/[\w.-]+', repository):
         raise SchedulerError('Invalid repository.')
     endpoint = f'https://api.github.com/repos/{repository}/actions/workflows/daily.yml/dispatches'
@@ -66,6 +68,14 @@ def apply(config, repository, request=api, sleeper=time.sleep):
             raise SchedulerError('Duplicate report jobs found; resolve them before applying schedules.')
         jobs[mode] = detail
         template = detail
+    if desired == 'native':
+        # Native scheduler selected: disable every StockWatch dispatch job so both
+        # automatic paths never fire at once. Nothing is created.
+        for mode, detail in sorted(jobs.items()):
+            sleeper(0.25)
+            request('PATCH', f"/jobs/{detail['jobId']}", {'job': {'enabled': False}})
+            print(f'{mode}: external schedule disabled (native scheduler selected).')
+        return len(jobs)
     if not template:
         raise SchedulerError('No authorized scheduled report template found. Create one in cron-job.org first.')
     plans = report_settings(config.get('reports'))
@@ -94,9 +104,12 @@ def apply(config, repository, request=api, sleeper=time.sleep):
 
 def main():
     import yaml
+    from stockwatch.storage import validate_config
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, default=Path('config.yaml'))
     parser.add_argument('--repository', default=os.environ.get('GITHUB_REPOSITORY', ''))
+    parser.add_argument('--apply-trigger', choices=('native', 'cron-job.org'), default='cron-job.org',
+                        help='Scheduler the external jobs must match; written to config on success.')
     args = parser.parse_args()
     try:
         config = yaml.safe_load(args.config.read_text(encoding='utf-8'))
@@ -104,7 +117,18 @@ def main():
             raise SchedulerError('Invalid report configuration.')
         # Validate all plans before the first mutation.
         report_settings(config.get('reports'))
-        apply(config, args.repository)
+        apply(config, args.repository, desired=args.apply_trigger, request=api)
+        # Two-phase switch: only after the external jobs match does config move, so
+        # "external selected but jobs missing" can never silence the native schedule.
+        current = (config.get('scheduler') or {}).get('trigger', 'native')
+        if current != args.apply_trigger:
+            if args.apply_trigger == 'native':
+                config.pop('scheduler', None)
+            else:
+                config['scheduler'] = {'trigger': args.apply_trigger}
+            validate_config(config)
+            args.config.write_text(yaml.safe_dump(config, sort_keys=False, allow_unicode=True), encoding='utf-8')
+            print(f'config.yaml scheduler.trigger set to {args.apply_trigger}; commit it to main.')
     except (SchedulerError, ValueError, OSError, yaml.YAMLError) as exc:
         print(str(exc) if isinstance(exc, (SchedulerError, ValueError)) else 'Unable to read schedule configuration.')
         return 1

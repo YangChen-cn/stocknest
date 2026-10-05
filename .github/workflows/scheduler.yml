@@ -2,9 +2,15 @@ name: Apply report schedules
 
 on:
   workflow_dispatch:
+    inputs:
+      desired_trigger:
+        description: 调度方式（native=GitHub 自带定时；cron-job.org=外部触发）
+        type: choice
+        options: [native, cron-job.org]
+        default: cron-job.org
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: stockwatch-scheduler-settings
@@ -27,4 +33,22 @@ jobs:
       - name: Apply external report schedules
         env:
           CRONJOB_API_KEY: ${{ secrets.CRONJOB_API_KEY }}
-        run: python -m stockwatch.scheduler_sync
+          DESIRED_TRIGGER: ${{ inputs.desired_trigger }}
+        run: python -m stockwatch.scheduler_sync --apply-trigger "$DESIRED_TRIGGER"
+      - name: Persist scheduler trigger
+        if: success()
+        run: |
+          # Two-phase switch: config.scheduler.trigger is committed only after the
+          # external jobs were synced successfully, so a failed switch never
+          # silences the native schedule.
+          if git diff --quiet -- config.yaml; then
+            echo "config.yaml unchanged; nothing to commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -- config.yaml
+            git commit -m "chore: update StockWatch scheduler trigger [skip ci]"
+            git fetch origin main
+            git rebase origin/main || { git rebase --abort; echo "config.yaml 与远端冲突，请手动处理后再试。"; exit 1; }
+            git push origin HEAD:main
+          fi

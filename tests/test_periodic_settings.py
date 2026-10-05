@@ -111,7 +111,8 @@ def test_external_api_preserves_dispatch_credentials_and_job_scope(capsys):
         if method == 'GET':
             return {'jobDetails': template}
         return {'jobId': 11}
-    apply({'reports': {'WEEKLY': {'enabled': True}, 'MONTHLY': {'enabled': True}, 'CLOSE': {'enabled': False}}}, 'example/tracker', request, lambda _: None)
+    apply({'reports': {'WEEKLY': {'enabled': True}, 'MONTHLY': {'enabled': True}, 'CLOSE': {'enabled': False}}},
+          'example/tracker', desired='cron-job.org', request=request, sleeper=lambda _: None)
     mutations = [p['job'] for method, _, p in calls if method in ('PATCH', 'PUT')]
     assert len(mutations) == 4
     assert all(job['extendedData']['headers'] == template['extendedData']['headers'] for job in mutations)
@@ -123,7 +124,7 @@ def test_external_api_preserves_dispatch_credentials_and_job_scope(capsys):
     assert all('99' not in path for _, path, _ in calls)
     assert 'fake-private-value' not in capsys.readouterr().out
     with pytest.raises(SchedulerError):
-        apply({}, 'example/tracker', lambda *a: {'someFailed': True}, lambda _: None)
+        apply({}, 'example/tracker', desired='cron-job.org', request=lambda *a: {'someFailed': True}, sleeper=lambda _: None)
 
 
 def test_cheap_preflight_skips_disabled_and_sent_without_calendar():
@@ -161,11 +162,18 @@ def test_scheduler_workflow_is_private_and_lightweight():
     import yaml
     from stockwatch.storage import ROOT
     workflow = yaml.load((ROOT / '.github/workflows/scheduler.yml').read_text(), Loader=yaml.BaseLoader)
-    assert workflow['permissions'] == {'contents': 'read'}
-    assert workflow['on'] == {'workflow_dispatch': ''}
+    # contents:write persists the scheduler trigger after a successful apply.
+    assert workflow['permissions'] == {'contents': 'write'}
+    inputs = workflow['on']['workflow_dispatch']['inputs']['desired_trigger']
+    assert inputs['options'] == ['native', 'cron-job.org'] and inputs['default'] == 'cron-job.org'
     assert 'github.event.repository.private == true' in workflow['jobs']['apply']['if']
     steps = workflow['jobs']['apply']['steps']
     assert not any('requirements-runtime' in step.get('run', '') or 'pytest' in step.get('run', '') for step in steps)
+    assert any('--apply-trigger' in step.get('run', '') for step in steps)
+    persist = next(step['run'] for step in steps if step.get('name') == 'Persist scheduler trigger')
+    # Two-phase switch: the trigger is committed only after the jobs were synced.
+    assert 'git add -- config.yaml' in persist and '[skip ci]' in persist
+    assert 'git diff --quiet -- config.yaml' in persist
 
 
 def test_weekend_migration_and_cross_month_reference():

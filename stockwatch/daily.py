@@ -58,7 +58,9 @@ def run(*, config_path: Path, transactions_path: Path, state_path: Path, output_
                 logger.info(t("HSBC sync: {imported} imported, {duplicates} duplicates, {skipped} skipped", lang, **result))
         except (HSBCSyncError, ValidationError, OSError) as exc:
             logger.error("HSBC sync failed (%s); portfolio report withheld", type(exc).__name__)
-            report = render_failure(session, "HSBC sync failed; the portfolio ledger may be incomplete.", [], 1, lang, mode=mode if mode in ("CLOSE", "INTRADAY") else "CLOSE")
+            # Failure notices keep the real mode: subject, JSON and attachment name
+            # must not masquerade as CLOSE for WEEKLY/MONTHLY runs.
+            report = render_failure(session, "HSBC sync failed; the portfolio ledger may be incomplete.", [], 1, lang, mode=mode)
             return deliver_failure(report, state, state_path, output_dir, session,
                                    f"last_hsbc_error_{mode.lower()}_session", settings if mail_enabled else None,
                                    sender, dry_run=dry_run)

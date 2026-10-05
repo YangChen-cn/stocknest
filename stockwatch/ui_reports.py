@@ -15,8 +15,8 @@ DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday")
 TRIGGERS = ("native", "cron-job.org")
 
 
-def save_trigger(path, current, desired, *, readonly):
-    """Local save, or a direct repository write when cloud editing is enabled."""
+def save_trigger(path, current, desired, *, readonly, root):
+    """Local two-phase save, or a direct repository write when cloud editing is enabled."""
     if readonly:
         from stockwatch.i18n import t as translate
         language = st.session_state.get('_stockwatch_language', 'en')
@@ -27,7 +27,7 @@ def save_trigger(path, current, desired, *, readonly):
             st.error(error_message(exc, language))
             return
         st.session_state['_report_settings_signature'] = None
-        message = ("Schedule trigger saved to GitHub; the next scheduled run uses it."
+        message = ("Schedule trigger saved to GitHub. Run Apply report schedules (same trigger) to confirm the external jobs."
                    if result["changed"] else "No new changes. GitHub already has this trigger.")
         st.success(translate(message, language))
         return
@@ -38,10 +38,23 @@ def save_trigger(path, current, desired, *, readonly):
         else:
             latest["scheduler"] = {"trigger": desired}
         save_config(path, latest)
-        st.session_state['_stockwatch_notice'] = "Schedule trigger saved locally. Sync with GitHub to apply it to scheduled reports."
-        st.rerun()
     except (ValidationError, OSError) as exc:
         st.error(error_message(exc, st.session_state.get('_stockwatch_language', 'en')))
+        return
+    # Two-phase switch: sync the local config, then let the workflow move the
+    # trigger only after the external jobs match. Failures keep the local save.
+    language = st.session_state.get('_stockwatch_language', 'en')
+    notice = t("Schedule trigger saved locally.", language)
+    try:
+        sync(root)
+        notice = t("Schedule trigger synced; queueing the external job sync.", language)
+        apply_report_schedules(root, desired)
+        notice = t("Schedule trigger saved. Check the Apply report schedules workflow result; it switches the active scheduler.", language)
+    except (SyncError, ValidationError, ControlError) as exc:
+        notice += " " + t("External job sync could not be queued: {detail}", language,
+                          detail=error_message(exc, language))
+    st.session_state['_stockwatch_notice'] = notice
+    st.rerun()
 
 
 def report_controls(path, config, demo, root, readonly=False):
@@ -66,21 +79,30 @@ def report_controls(path, config, demo, root, readonly=False):
         trigger_col, _ = st.columns([1, 2])
         if trigger_col.button(tr("Save schedule trigger"), disabled=demo or (readonly and not ui_cloud.editing_ready()),
                               key="save_scheduler_trigger"):
-            save_trigger(path, config, trigger, readonly=readonly)
+            save_trigger(path, config, trigger, readonly=readonly, root=root)
         with st.form('report_schedules'):
             updated = {}
+            external = current_trigger == 'cron-job.org'
             for mode in MODES:
                 item = settings[mode]
                 cols = st.columns([2, 2, 3])
-                enabled = cols[0].checkbox(tr(LABELS[mode]), value=item['enabled'], key=f'report_{mode}_enabled')
-                hour, minute = map(int, item['time'].split(':'))
-                clock = cols[1].time_input(tr('Time (Hong Kong)' if mode in PERIODIC else 'Time (New York)'), value=time(hour, minute), step=60, key=f'report_{mode}_time')
+                # Native GitHub slots are fixed (10:23 intraday / 18:53 closing New
+                # York); editing times there would silently never take effect.
+                enabled = cols[0].checkbox(tr(LABELS[mode]), value=item['enabled'],
+                                           disabled=not external and mode in PERIODIC, key=f'report_{mode}_enabled')
+                clock = cols[1].time_input(tr('Time (Hong Kong)' if mode in PERIODIC else 'Time (New York)'),
+                                           value=time(*map(int, item['time'].split(':'))), step=60,
+                                           disabled=not external, key=f'report_{mode}_time')
                 updated[mode] = {'enabled': enabled, 'time': clock.strftime('%H:%M')}
                 if mode in PERIODIC:
-                    cols[2].caption(tr('Every Saturday · Hong Kong time' if mode == 'WEEKLY' else 'First weekend day of each month · previous month'))
+                    cols[2].caption(tr('Every Saturday · Hong Kong time' if mode == 'WEEKLY' else 'First weekend day of each month · previous month')
+                                    if external else tr('Automatic sending needs the external cron-job.org trigger; run it manually otherwise.'))
                 else:
-                    updated[mode]['days'] = cols[2].multiselect(tr('Weekdays'), list(range(5)), default=item['days'], format_func=lambda day: tr(DAYS[day]), key=f'report_{mode}_days')
-            st.caption(tr("Weekend summaries use completed closes: weekly through the last session of the week, monthly through the last session of the previous month. Default 10:52 Hong Kong time."))
+                    updated[mode]['days'] = cols[2].multiselect(tr('Weekdays'), list(range(5)), default=item['days'],
+                                                                format_func=lambda day: tr(DAYS[day]), disabled=not external,
+                                                                key=f'report_{mode}_days')
+            st.caption(tr("Weekend summaries use completed closes: weekly through the last session of the week, monthly through the last session of the previous month. Default 10:52 Hong Kong time.")
+                       if external else tr("Native scheduling uses GitHub's fixed slots: intraday 10:23 and closing 18:53 New York, Monday to Friday. Custom times and automatic weekly or monthly reports need the external cron-job.org trigger."))
             saved = st.form_submit_button(tr('Save report schedules'), disabled=demo or readonly)
         if saved:
             try:
@@ -92,10 +114,12 @@ def report_controls(path, config, demo, root, readonly=False):
             except (ValidationError, OSError) as exc:
                 st.error(error_message(exc, lang) if isinstance(exc, ValidationError) else tr('Save failed; original file preserved.'))
         st.caption(tr("Cloud time changes require CRONJOB_API_KEY in GitHub Secrets and an existing authorized cron-job.org report job. The key is never saved in this app. Native GitHub schedules remain a fixed-time fallback."))
-        if st.button(tr('Sync and apply cloud schedules'), disabled=demo or readonly):
+        if st.button(tr('Disable external report jobs') if current_trigger == 'native' else tr('Sync and apply cloud schedules'),
+                     disabled=demo or readonly,
+                     help=tr('Syncs config to GitHub, then applies schedules: cron-job.org mode syncs jobs to your report settings; native mode disables all external report jobs.')):
             try:
                 sync(root)
-                apply_report_schedules(root)
+                apply_report_schedules(root, current_trigger)
                 st.success(tr('Scheduler update queued. Check the Apply report schedules workflow result; saving locally alone does not change external trigger times.'))
             except (ControlError, SyncError, ValidationError) as exc:
                 st.error(error_message(exc, lang))

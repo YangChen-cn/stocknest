@@ -393,6 +393,15 @@ def test_dashboard_and_watchlist_offer_ai_download(app):
 def test_report_settings_save_and_demo_read_only(app):
     app_test, root = app
     app_test.run()
+    # Native mode locks the fixed GitHub slots: times and periodic toggles are
+    # read-only, so edited values can never silently fail to trigger.
+    assert next(w for w in app_test.time_input if w.key == "report_CLOSE_time").disabled
+    assert next(w for w in app_test.multiselect if w.key == "report_CLOSE_days").disabled
+    assert next(b for b in app_test.checkbox if b.key == "report_WEEKLY_enabled").disabled
+    next(box for box in app_test.selectbox if box.key == "scheduler_trigger").set_value("cron-job.org").run()
+    next(button for button in app_test.button if button.label == "Save schedule trigger").click().run()
+    assert not app_test.exception and load_config(root / "config.yaml")["scheduler"] == {"trigger": "cron-job.org"}
+    assert not next(w for w in app_test.time_input if w.key == "report_CLOSE_time").disabled
     next(box for box in app_test.checkbox if box.key == "report_WEEKLY_enabled").set_value(True)
     next(button for button in app_test.button if button.label == "Save report schedules").click().run()
     assert not app_test.exception
@@ -402,11 +411,11 @@ def test_report_settings_save_and_demo_read_only(app):
     assert not any(widget.key in ("report_WEEKLY_days", "report_MONTHLY_days") for widget in app_test.selectbox)
     assert [widget.key for widget in app_test.multiselect if widget.key.startswith("report_")] == ["report_INTRADAY_days", "report_CLOSE_days"]
     # The scheduler switch saves independently of the report-schedule form.
-    assert next(box for box in app_test.selectbox if box.key == "scheduler_trigger").value == "native"
-    next(box for box in app_test.selectbox if box.key == "scheduler_trigger").set_value("cron-job.org").run()
+    assert next(box for box in app_test.selectbox if box.key == "scheduler_trigger").value == "cron-job.org"
+    next(box for box in app_test.selectbox if box.key == "scheduler_trigger").set_value("native").run()
     next(button for button in app_test.button if button.label == "Save schedule trigger").click().run()
     assert not app_test.exception
-    assert load_config(root / "config.yaml")["scheduler"] == {"trigger": "cron-job.org"}
+    assert "scheduler" not in load_config(root / "config.yaml")
     app_test.sidebar.radio[0].set_value("Settings").run()
     assert not app_test.exception
     app_test.sidebar.toggle[0].set_value(True).run()

@@ -205,6 +205,7 @@ if __name__ == "__main__":
     raise SystemExit(main())
 
 
-def apply_report_schedules(root: Path):
+def apply_report_schedules(root: Path, trigger: str = 'cron-job.org'):
     """Use existing gh credentials; management key stays in cloud Secrets."""
-    _command([gh_path(), "workflow", "run", "scheduler.yml", "--repo", repository(root), "--ref", "main"], root=root)
+    _command([gh_path(), "workflow", "run", "scheduler.yml", "--repo", repository(root), "--ref", "main",
+              "-f", f"desired_trigger={trigger}"], root=root)

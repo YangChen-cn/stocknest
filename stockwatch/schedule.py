@@ -20,7 +20,10 @@ EXTERNAL_TRIGGER = "cron-job.org"
 
 
 def configured_trigger(path: Path) -> str:
-    """Read scheduler.trigger from the config without a YAML dependency (native by default)."""
+    """Read scheduler.trigger from the config without a YAML dependency (native by default).
+
+    Accepts quoted values too — "cron-job.org" and 'cron-job.org' are legal YAML.
+    """
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError:
@@ -35,9 +38,9 @@ def configured_trigger(path: Path) -> str:
                 break  # A new top-level key ends the scheduler section.
             in_section = stripped.split(":", 1)[0] == "scheduler" and stripped.endswith(":")
         elif in_section:
-            match = re.match(r"trigger:\s*(native|cron-job\.org)\b", stripped)
+            match = re.match(r"trigger:\s*(['\"]?)(native|cron-job\.org)\1\s*(?:#.*)?$", stripped)
             if match:
-                return match.group(1)
+                return match.group(2)
     return "native"
 
 
@@ -85,11 +88,16 @@ def main() -> int:
     parser.add_argument("--github-output", type=Path, required=True)
     args = parser.parse_args()
     now = datetime.now(timezone.utc)
+    trigger = configured_trigger(args.config)
     mode = scheduled_mode(args.cron, now) if args.cron else args.mode
-    if mode and args.cron and configured_trigger(args.config) == EXTERNAL_TRIGGER:
-        # The dashboard scheduler switch owns the native slots; external dispatches
-        # and manual runs are never gated by this.
+    # Strict mutual exclusion: exactly one automatic path runs for the selected
+    # trigger, and manual dispatches (scheduled=false) are never gated.
+    if mode and args.cron and trigger == EXTERNAL_TRIGGER:
         print("Native slot skipped: config scheduler.trigger is cron-job.org.")
+        mode = None
+    if mode and args.scheduled and trigger != EXTERNAL_TRIGGER:
+        print("External dispatch skipped: config scheduler.trigger is not cron-job.org. "
+              "Use a manual run (scheduled=false) if you need a one-off report.")
         mode = None
     if mode and args.scheduled:
         import yaml
