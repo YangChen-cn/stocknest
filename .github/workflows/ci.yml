@@ -1,6 +1,7 @@
 name: StockWatch CI
 
 on:
+  workflow_dispatch:
   push:
     # Tags point at commits that were already tested on their branch push.
     tags-ignore:
