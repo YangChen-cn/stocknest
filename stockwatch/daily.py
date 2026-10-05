@@ -21,6 +21,7 @@ from stockwatch.providers.openbb_provider import OpenBBProvider
 from stockwatch.performance import DEFAULT_BENCHMARK, update_history, load_history, fingerprint
 from stockwatch.reports import render_report, render_failure
 from stockwatch.services import snapshot, watchlist_summary
+from stockwatch.garden import build_garden
 from stockwatch.storage import ROOT, ValidationError, atomic_write, load_config, load_state, load_transactions, save_state
 
 logger = logging.getLogger(__name__)
@@ -120,7 +121,9 @@ def run(*, config_path: Path, transactions_path: Path, state_path: Path, output_
             logger.warning("Performance history unavailable; intraday report continues")
     pending, recovered_state = evaluate(config, quotes, state, session, mode=mode)
     watch_rows = watchlist_summary(config, portfolio, quotes, provider, session) if mode == "CLOSE" else None
-    report = render_report(session, portfolio, quotes, config, pending, demo=demo, mode=mode, generated_at=now, performance=history, watchlist_rows=watch_rows)
+    garden = build_garden(transactions, portfolio, session, mode=mode, history=history, benchmark=benchmark)
+    report = render_report(session, portfolio, quotes, config, pending, demo=demo, mode=mode, generated_at=now,
+                           performance=history, watchlist_rows=watch_rows, garden=garden)
     filename = f"{session}" if mode == "CLOSE" else f"{session}-intraday"
     atomic_write(output_dir / f"{filename}.txt", report.text)
     atomic_write(output_dir / f"{filename}.html", report.html)

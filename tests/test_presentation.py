@@ -26,7 +26,9 @@ def test_warm_copy_cannot_change_machine_data_or_error_status(monkeypatch):
     args = (date(2026, 10, 6), calculate({}, {}), {}, config, [])
     now = datetime(2026, 10, 6, 23, tzinfo=timezone.utc)
     before = render_report(*args, generated_at=now)
-    monkeypatch.setattr('stockwatch.reports.reflection', lambda *args: 'A quieter closing line.')
+    monkeypatch.setattr('stockwatch.presentation.CLASSICS', {
+        lang: (('A quieter closing line.', 'Test author', 'Test work', 'https://example.invalid/source', 'Test gloss'),)
+        for lang in ('en', 'zh-CN')})
     after = render_report(*args, generated_at=now)
     assert before.data_json == after.data_json
     assert after.html.count('A quieter closing line.') == 1

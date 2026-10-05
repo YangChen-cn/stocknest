@@ -303,20 +303,22 @@ def test_close_report_milestone_all_time_high_and_drawdown():
 
 
 def test_report_epigraph_rotates_by_day_and_language():
-    from stockwatch.i18n import QUOTES
+    from stockwatch.presentation import classic, reflection
     from stockwatch.portfolio import calculate
     book = calculate({}, {})
     zh = {"portfolio": {"language": "zh-CN"}, "watchlist": {}}
     en = {"portfolio": {"language": "en"}, "watchlist": {}}
     first = render_report(DAY, book, {}, zh, [])
-    expected_zh = QUOTES[DAY.toordinal() % len(QUOTES)][0]
-    assert expected_zh in first.text and expected_zh in first.html
-    english = render_report(DAY, book, {}, en, [])
-    expected_en = QUOTES[DAY.toordinal() % len(QUOTES)][1]
+    expected = classic(DAY)[1][0]
     from html import unescape
-    assert expected_en in english.text and expected_en in unescape(english.html)
+    assert expected in first.text and expected.replace('\n', '<br>') in unescape(first.html)
+    english = render_report(DAY, book, {}, en, [])
+    assert expected in english.text and expected.replace('\n', '<br>') in unescape(english.html)
+    assert reflection(DAY, 'zh-CN') in first.text
+    assert reflection(DAY, 'en') in english.text
     other = render_report(date(2026, 10, 5), book, {}, zh, [])
-    assert QUOTES[date(2026, 10, 5).toordinal() % len(QUOTES)][0] in other.text
+    assert classic(date(2026, 10, 5))[0] != classic(DAY)[0]
+    assert classic(date(2026, 10, 5))[1][0] in other.text
 
 
 def test_intraday_watchlist_empty_one_and_stable_ties():

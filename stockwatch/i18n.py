@@ -396,12 +396,73 @@ ZH.update({
 })
 
 # Rotating report epigraphs — patience, accumulation and composure, never advice.
-QUOTES = (
-    ("一天的变化，留在记录里。", "A day's changes, kept in your record."),
-    ("每一页记录，都让来路更清楚。", "Each entry makes the journey clearer."),
-    ("数字有起伏，记录有脉络。", "Numbers move; the record keeps the context."),
-    ("把今天记下，给生活留些空白。", "Keep today's record. Leave room for life."),
-)
+# Short original-language extracts; glosses are our own prose, not published translations.
+# English spelling/capitalization follows the linked historical editions.
+# Each entry: original, author, work, primary-text source, opposite-language gloss.
+_WS = "https://zh.wikisource.org/zh-hans/"
+_WORDSWORTH = "https://www.gutenberg.org/cache/epub/8824/pg8824-images.html"
+_BLAKE = "https://www.gutenberg.org/cache/epub/574/pg574-images.html"
+_DICKINSON = "https://www.gutenberg.org/cache/epub/12242/pg12242-images.html"
+CLASSICS = {
+    "zh-CN": (
+        ("明月松间照，清泉石上流。", "王维", "山居秋暝", _WS + "山居秋暝", "Moonlight between pines; clear water flowing over stones."),
+        ("人闲桂花落，夜静春山空。", "王维", "鸟鸣涧", _WS + "鳥鳴澗", "Falling blossoms in the stillness of a spring night."),
+        ("返景入深林，复照青苔上。", "王维", "鹿柴", _WS + "鹿柴_(王維)", "The last light reaches deep into the woods and rests on moss."),
+        ("采菊东篱下，悠然见南山。", "陶渊明", "饮酒·其五", _WS + "飲酒_(陶淵明)#其五", "Picking chrysanthemums, a quiet view of the southern hills."),
+        ("久在樊笼里，复得返自然。", "陶渊明", "归园田居·其一", _WS + "歸園田居#其一", "After a long confinement, a return to the natural world."),
+        ("夜来风雨声，花落知多少。", "孟浩然", "春晓", _WS + "春曉_(孟浩然)", "Remembering last night's wind and rain, wondering about the blossoms."),
+        ("小荷才露尖尖角，早有蜻蜓立上头。", "杨万里", "小池", _WS + "小池", "A dragonfly rests on the tip of a newly emerging lotus leaf."),
+        ("天街小雨润如酥，草色遥看近却无。", "韩愈", "早春呈水部张十八员外·其一", _WS + "早春呈水部張十八員外", "Fine spring rain; a hint of green visible from a distance."),
+        ("留连戏蝶时时舞，自在娇莺恰恰啼。", "杜甫", "江畔独步寻花·其六", _WS + "江畔獨步尋花七絕句", "Butterflies linger in their dance; orioles sing freely."),
+        ("日照香炉生紫烟，遥看瀑布挂前川。", "李白", "望庐山瀑布·其二", _WS + "望廬山瀑布水二首", "Sunlit mountain mist and a distant waterfall suspended above the river."),
+        ("几处早莺争暖树，谁家新燕啄春泥。", "白居易", "钱塘湖春行", _WS + "錢塘湖春行", "Early birds seek warm branches; swallows gather spring mud."),
+        ("莫听穿林打叶声，何妨吟啸且徐行。", "苏轼", "定风波", _WS + "定風波_(莫聽穿林打葉聲)", "A walker continues slowly, singing through the sound of rain."),
+    ),
+    "en": (
+        ("And then my heart with pleasure fills,\nAnd dances with the Daffodils.", "William Wordsworth", "I wandered lonely as a Cloud", _WORDSWORTH, "想起水仙，心里又有了轻盈的欢喜。"),
+        ("My heart leaps up when I behold\nA Rainbow in the sky:", "William Wordsworth", "My heart leaps up", _WORDSWORTH, "望见天空的彩虹，心中仍会雀跃。"),
+        ("Sit near us on the bough!\nWe'll talk of sunshine and of song;", "William Wordsworth", "To a Butterfly", _WORDSWORTH, "邀蝴蝶停在枝头，一同说说阳光与歌声。"),
+        ("The sun does arise,\nAnd make happy the skies;", "William Blake", "The Echoing Green", _BLAKE, "太阳升起，天空也明亮起来。"),
+        ("Merry, merry sparrow!\nUnder leaves so green", "William Blake", "The Blossom", _BLAKE, "绿叶下，是轻快的小麻雀。"),
+        ("When the green woods laugh with the voice of joy,\nAnd the dimpling stream runs laughing by;", "William Blake", "Laughing Song", _BLAKE, "林间与溪流仿佛都带着笑意。"),
+        ("Hope is the thing with feathers\nThat perches in the soul,", "Emily Dickinson", "Hope", _DICKINSON, "希望如一只小鸟，栖在心里。"),
+        ("Bring me the sunset in a cup,\nReckon the morning's flagons up,", "Emily Dickinson", "Problems", _DICKINSON, "想把日落盛进杯中，也收下清晨的光。"),
+        ("A light exists in spring\nNot present on the year", "Emily Dickinson", "A light exists in spring", _DICKINSON, "春天有一种光，是别的时节不曾有的。"),
+        ("To make a prairie it takes a clover and one bee, —\nOne clover, and a bee,\nAnd revery.", "Emily Dickinson", "To make a prairie", _DICKINSON, "一株三叶草、一只蜜蜂，再加一点遐想，便有了草原。"),
+        ("A little road not made of man,\nEnabled of the eye,", "Emily Dickinson", "A little road not made of man", _DICKINSON, "目光发现一条并非人造的小路。"),
+        ("There is no frigate like a book\nTo take us lands away,", "Emily Dickinson", "A Book", _DICKINSON, "书页也能带人抵达远方。"),
+    ),
+}
+
+ZH.update({
+    "Holding garden": "持仓花园",
+    "Garden through {date}": "花园截至 {date}",
+    "This week's garden": "本周花事",
+    "This month's garden": "本月花事",
+    "Today's garden": "今日花事",
+    "Past botanical notes": "往期花笺",
+    "No current holdings; the garden is empty.": "当前没有持仓，花园暂为空。",
+    "No recorded trades today.": "当日没有记录的交易。",
+    "No garden events in this period.": "本期没有新的花事。",
+    "Seasonal illustration, not actual weather. Plants represent holding time, not investment quality.": "季节小景并非真实天气；植物只映照持有时间，不评价投资优劣。",
+    "Intraday atmosphere is an estimate; no closing high is celebrated.": "盘中光景为估算，不作收盘新高纪念。",
+    "Market change unavailable; neutral scenery.": "涨跌数据不可用，保留中性小景。",
+    "{symbol} · {plant} · {days} days held · {stage}": "{symbol} · {plant} · 连续持有 {days} 天 · {stage}",
+    "Since {date}": "始于 {date}",
+    "New seedling": "添新苗",
+    "Watering · added to holding": "养护 · 加仓",
+    "Pruning · reduced holding": "修枝 · 减仓",
+    "Pressed leaf · closed holding after {days} days": "收作花笺 · 连续持有 {days} 天后清仓",
+    "Grew to {stage} · {days} days held": "长至{stage} · 连续持有 {days} 天",
+    "Flowers · confirmed closing NAV high": "添花 · 已确认收盘净值新高",
+    "Sprout": "萌芽", "Seedling": "幼苗", "Unfurling": "舒展", "Lush": "繁茂", "Mature": "成株",
+    "Herb": "香草", "Fern": "蕨", "Rosemary": "迷迭香", "Olive": "橄榄", "Hydrangea": "绣球", "Bamboo": "竹",
+    "Peony": "牡丹", "Camellia": "山茶", "Chrysanthemum": "菊花", "Iris": "鸢尾", "Daffodil": "水仙", "Lotus": "荷花",
+    "Winter": "冬", "Spring": "春", "Summer": "夏", "Autumn": "秋",
+    "Warm light": "暖光", "Gentle rain": "细雨", "Soft clouds": "薄云", "Unknown": "中性小景",
+    "Source": "出处", "Reading note": "释意",
+    "Botanical illustration unavailable; the written garden remains below.": "插画暂时不可用，花园文字记录仍保留。",
+})
 
 ZH.update({
     "See the changes. Keep the record.": "看清变化，留下记录。",

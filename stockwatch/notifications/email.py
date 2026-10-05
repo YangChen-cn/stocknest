@@ -43,7 +43,13 @@ def make_message(report: Report, settings: EmailSettings) -> EmailMessage:
     message["From"] = settings.address
     message["To"] = settings.recipient
     message.set_content(report.text)
-    message.add_alternative(report.html, subtype="html")
+    html = report.html
+    for image in report.inline_images:
+        html = html.replace(image.data_url, f"cid:{image.cid}")
+    message.add_alternative(html, subtype="html")
+    html_part = message.get_payload()[1]
+    for image in report.inline_images:
+        html_part.add_related(image.data, maintype="image", subtype="png", cid=f"<{image.cid}>", disposition="inline")
     if report.data_json is not None:
         message.add_attachment(report.data_json.encode("utf-8"), maintype="application", subtype="json",
                                filename=report.data_filename or "stockwatch-report.json", cte="base64")

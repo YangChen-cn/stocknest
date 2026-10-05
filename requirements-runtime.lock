@@ -29,6 +29,7 @@ openbb-equity==1.6.2
 openbb-yfinance==1.6.3
 pandas==2.3.3
 pandas_market_calendars==5.4.0
+pillow==12.3.0
 peewee==4.5.2
 platformdirs==4.12.2
 propcache==0.5.4

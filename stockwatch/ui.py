@@ -36,7 +36,9 @@ from stockwatch.services import candidate_rows, search_instruments, snapshot
 from stockwatch.storage import (COLUMNS, ROOT, WATCH_STATUSES, ValidationError, load_config, load_transactions,
                                 save_config, save_transactions, validate_transactions, ensure_user_files)
 
-from stockwatch.presentation import GREEN, PALETTE, reflection, record_note, value_color
+from stockwatch.presentation import GREEN, PALETTE, reflection_html, record_note, value_color
+from stockwatch.garden import build_garden
+from stockwatch.garden_render import garden_view
 from stockwatch.ui_style import apply_style, plot
 
 PAGES = ("Dashboard", "Performance", "Holdings", "Transactions", "Watchlist & Alerts", "Settings")
@@ -283,6 +285,23 @@ def milestone_caption(portfolio: dict, transactions, config: dict, demo: bool, a
         return
     message = "Portfolio NAV is above its previous high (intraday estimate, {date})." if status["basis"] == "intraday" else "Portfolio NAV reached a new high at the {date} close."
     st.markdown(f'<div class="sw-milestone">↗ {escape(text(message, date=status["as_of"]))}</div>', unsafe_allow_html=True)
+
+
+def holding_garden(portfolio, transactions, config, demo, as_of):
+    """Only already-loaded quotes and local history; never request live history."""
+    benchmark = config["portfolio"].get("benchmark", DEFAULT_BENCHMARK)
+    history = None
+    try:
+        history = (cached_performance_preview([tx.row() for tx in transactions], benchmark, as_of, True, None)
+                   if demo else load_history(ROOT / "data/performance.json"))
+    except (ValidationError, OSError):
+        pass
+    saved = portfolio.get("_market_snapshot") if portfolio.get("_snapshot_whole") else None
+    mode = saved["mode"] if saved else "INTRADAY" if not demo and active_session() == as_of else "CLOSE"
+    garden = build_garden(transactions, portfolio, as_of, mode=mode, history=history, benchmark=benchmark)
+    view = garden_view(garden, st.session_state.get("_stockwatch_language", "en"))
+    with st.expander(text("Holding garden"), expanded=False):
+        st.html(view.html)
 
 
 def tint_gains_losses(frame: pd.DataFrame) -> Styler:
@@ -766,15 +785,15 @@ def main(app_name: str = "StockWatch"):
         return
     if page == "Transactions":
         transactions_page(transactions_path, transactions, config, demo)
-        page_footer()
+        page_footer(DemoProvider().session if demo else latest_session())
         return
     if page == "Settings":
         settings_page(config_path, config, demo)
-        page_footer()
+        page_footer(DemoProvider().session if demo else latest_session())
         return
     if page == "Performance":
         performance_page(config, transactions, demo)
-        page_footer()
+        page_footer(DemoProvider().session if demo else latest_session())
         return
     as_of = DemoProvider().session if demo else current_price_session()
     if page == "Watchlist & Alerts":
@@ -819,6 +838,8 @@ def main(app_name: str = "StockWatch"):
             with st.expander(text("More holding details"), expanded=False):
                 st.dataframe(tint_gains_losses(table), hide_index=True, width="stretch")
                 st.caption(text("Daily P/L adjusts for recorded buys, sells and fees; trade-day returns use daily timing assumptions."))
+    if page == "Dashboard":
+        holding_garden(portfolio, transactions, config, demo, as_of)
     if page == "Holdings":
         for row in portfolio["holdings"]:
             symbol = row["symbol"]
@@ -888,4 +909,4 @@ def main(app_name: str = "StockWatch"):
 
 def page_footer(day=None):
     day = day or latest_session()
-    st.markdown(f'<div class="sw-footer">{escape(reflection(day, st.session_state.get("_stockwatch_language", "en")))}</div>', unsafe_allow_html=True)
+    st.html(f'<div class="sw-footer">{reflection_html(day, st.session_state.get("_stockwatch_language", "en"))}</div>')

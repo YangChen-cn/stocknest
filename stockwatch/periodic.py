@@ -6,7 +6,9 @@ from html import escape
 
 from stockwatch.calendar import previous_session
 from stockwatch.i18n import language, t
-from stockwatch.presentation import NEUTRAL, BORDER, SOFT, email_shell, email_section, reflection, record_note, value_color
+from stockwatch.presentation import NEUTRAL, BORDER, SOFT, email_shell, email_section, reflection, reflection_html, record_note, value_color
+from stockwatch.garden import Garden, build_garden
+from stockwatch.garden_render import garden_view
 from stockwatch.notifications.email import EmailDeliveryError, EmailSettings, send_report
 from stockwatch.performance import DEFAULT_BENCHMARK, update_history
 from stockwatch.report_data import append_data, report_data, serialize_data
@@ -45,7 +47,7 @@ def period_metrics(history, start, end):
     return result
 
 
-def render_summary(mode, session, portfolio, quotes, config, history, now, demo=False):
+def render_summary(mode, session, portfolio, quotes, config, history, now, demo=False, *, garden: Garden | None = None):
     start, end, key = summary_period(mode, session)
     metrics = period_metrics(history, start, end)
     lang = language(config)
@@ -81,22 +83,25 @@ def render_summary(mode, session, portfolio, quotes, config, history, now, demo=
     intro = f"<p style='color:{NEUTRAL};font-size:14px'>{escape(lines[2])}<br>{escape(lines[3])}</p>"
     note = record_note(history, lang)
     closing = reflection(end, lang)
+    garden_content = garden_view(garden, lang)
     hero = (f"<table role='presentation' style='width:100%;background:{SOFT};padding:12px;border-radius:8px'><tr>"
             f"<td style='vertical-align:top'>{escape(t('Market Value', lang))}<br><strong class='mail-hero' style='font-size:30px'>{escape(money(portfolio['market_value'], lang=lang))}</strong></td>"
             f"<td style='vertical-align:top;text-align:right'>{escape(t('Period holdings return', lang))}<br><strong class='mail-hero' style='font-size:26px;color:{value_color(metrics['portfolio_return_pct'])}'>{escape(percent(metrics['portfolio_return_pct'], lang=lang))}</strong></td></tr></table>")
     content = notice + hero + f"<table class='mail-table' style='width:100%;border-collapse:collapse'>{''.join(rows[2:])}</table>"
-    content += email_section(t('Holdings', lang), ''.join(holding_rows)) + intro
+    content += garden_content.html + email_section(t('Holdings', lang), ''.join(holding_rows)) + intro
     if note:
         content += f"<p style='color:{NEUTRAL};font-size:13px'>{escape(note)}</p>"
     content += f"<p style='font-size:13px;color:{NEUTRAL}'>{escape(t('JSON data is attached for your own analysis.', lang))}</p>"
-    html = email_shell(title, f"{start} — {end}", content, lang, closing=closing)
+    html = email_shell(title, f"{start} — {end}", content, lang, closing=closing, closing_html=reflection_html(end, lang))
+    if garden_content.text:
+        lines.extend(["", garden_content.text])
     lines.extend(["", closing, t('JSON data is attached for your own analysis.', lang)])
     data = report_data(end, portfolio, quotes, config, [], mode=mode, generated_at=now, demo=demo, performance=history)
     data['report_type'] = 'period_summary'
     data['period_summary'] = {k: str(v) if isinstance(v, Decimal) else v for k, v in metrics.items()}
     text, html = append_data('\n'.join(lines), html, data)
     return Report(f"{title} | {percent(metrics['portfolio_return_pct'], lang=lang)} | {key}", text, html,
-                  serialize_data(data), f"stockwatch-{mode.lower()}-{key}.json")
+                  serialize_data(data), f"stockwatch-{mode.lower()}-{key}.json", garden_content.images)
 
 
 def run_summary(*, mode, config, session, now, provider, transactions_path, state_path, output_dir,
@@ -115,7 +120,11 @@ def run_summary(*, mode, config, session, now, provider, transactions_path, stat
     history = update_history(performance_path, transactions, provider, end,
                              config['portfolio'].get('benchmark', DEFAULT_BENCHMARK), persist=False)
     portfolio, quotes = snapshot(config, transactions, provider, end, closing=True, now=now)
-    report = render_summary(mode, reference, portfolio, quotes, config, history, now, demo)
+    start = summary_period(mode, reference)[0]
+    garden = build_garden(transactions, portfolio, end, mode=mode, history=history,
+                          benchmark=config['portfolio'].get('benchmark', DEFAULT_BENCHMARK),
+                          period_start=start, period_return=period_metrics(history, start, end)['portfolio_return_pct'])
+    report = render_summary(mode, reference, portfolio, quotes, config, history, now, demo, garden=garden)
     atomic_write(output_dir / f"{mode.lower()}-{key}.txt", report.text)
     atomic_write(output_dir / f"{mode.lower()}-{key}.html", report.html)
     if dry_run or demo:

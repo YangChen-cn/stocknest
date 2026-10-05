@@ -35,6 +35,21 @@ def test_all_pages_empty_and_demo(app, page):
         assert len(app_test.metric) == 5 and len(app_test.dataframe) == 2
 
 
+def test_dashboard_garden_is_folded_and_demo_does_not_write_user_records(app):
+    app_test, root = app
+    before = {path: path.read_bytes() for path in (root / 'config.yaml', root / 'data/transactions.csv')}
+    app_test.run()
+    app_test.sidebar.toggle[0].set_value(True).run()
+    assert not app_test.exception
+    garden = next(element for element in app_test.expander if element.label == 'Holding garden')
+    assert not garden.proto.expanded
+    html = '\n'.join(element.proto.body for element in app_test.get('html'))
+    assert '9 days held' in html and 'Daffodil' in html and 'data:image/png;base64,' in html
+    assert html.count("class='sw-classic'") == 1
+    assert all(path.read_bytes() == data for path, data in before.items())
+    assert not (root / 'data/state.json').exists() and not (root / 'data/performance.json').exists()
+
+
 def test_transactions_editor_save(app):
     app_test, root = app
     app_test.run()

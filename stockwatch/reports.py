@@ -11,8 +11,10 @@ from stockwatch.i18n import data_status, language, t
 from stockwatch.providers.base import Quote
 from stockwatch.performance import milestone_status, period_returns
 from stockwatch.report_data import append_data, report_data, serialize_data
+from stockwatch.garden import Garden
+from stockwatch.garden_render import garden_view
 
-from stockwatch.presentation import GREEN, RED, NEUTRAL, SOFT, email_section, email_shell, reflection, record_note, value_color
+from stockwatch.presentation import GREEN, RED, NEUTRAL, SOFT, InlineImage, email_section, email_shell, reflection, reflection_html, record_note, value_color
 
 
 def money(value, *, signed: bool = False, lang: str = "en") -> str:
@@ -36,6 +38,7 @@ class Report:
     html: str
     data_json: str | None = None
     data_filename: str | None = None
+    inline_images: tuple[InlineImage, ...] = ()
 
 
 def intraday_watchlist_highlights(config, quotes, held, session):
@@ -55,7 +58,8 @@ def intraday_watchlist_highlights(config, quotes, held, session):
 
 def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], config: dict,
                   alerts: list[Alert], *, demo: bool = False, mode: str = "CLOSE",
-                  generated_at: datetime | None = None, performance: dict | None = None, watchlist_rows: list[dict] | None = None) -> Report:
+                  generated_at: datetime | None = None, performance: dict | None = None, watchlist_rows: list[dict] | None = None,
+                  garden: Garden | None = None) -> Report:
     report_session_key(mode)
     intraday = mode == "INTRADAY"
     generated_at = generated_at or datetime.now(timezone.utc)
@@ -108,6 +112,7 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
         summary = summary[1:3]
     milestone_line = tr("Portfolio NAV reached a new high at the {date} close.", date=session.isoformat()) if milestone and milestone["new_high"] else None
     quote_line = reflection(session, lang)
+    garden_content = garden_view(garden, lang)
     lines = [title, timing, "", tr("SIMULATED DEMO DATA — not live market prices") if demo else tr("Regular-session prices · USD"), "", tr("Portfolio")]
     data_warning = tr("Market data is missing; this report cannot provide a complete portfolio valuation.") if portfolio["market_value"] is None else ""
     if data_warning:
@@ -276,9 +281,12 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
     attachment_note = tr("JSON data is attached for your own analysis.")
     html = email_shell(heading, f"{session.isoformat()} · {timing}",
                        demo_banner + warning_banner + hero + milestone_html + summary_block
-                       + record_html + holdings_block + performance_block + watch_html + alerts_block
+                       + record_html + garden_content.html + holdings_block + performance_block + watch_html + alerts_block
                        + notable_block + near_block + errors_block + footer
-                       + f"<p style='font-size:13px;color:{NEUTRAL}'>{escape(attachment_note)}</p>", lang, closing=quote_line)
+                       + f"<p style='font-size:13px;color:{NEUTRAL}'>{escape(attachment_note)}</p>", lang,
+                       closing=quote_line, closing_html=reflection_html(session, lang))
+    if garden_content.text:
+        lines.extend(["", garden_content.text])
     lines.extend(["", quote_line, attachment_note])
     data = report_data(session, portfolio, quotes, config, alerts, mode=mode, generated_at=generated_at,
                        demo=demo, performance=performance, watchlist_rows=watchlist_rows)
@@ -286,7 +294,7 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
         data["visible_watchlist_symbols"] = [quote.symbol for quote in highlights]
         data["watchlist_highlight_selection"] = "up to 3 unheld watched symbols reaching 5% absolute daily change, ranked by magnitude, ties by symbol"
     plain, html = append_data("\n".join(lines) + "\n", html, data)
-    return Report(subject, plain, html, serialize_data(data), f"stockwatch-{session}-{mode.lower()}.json")
+    return Report(subject, plain, html, serialize_data(data), f"stockwatch-{session}-{mode.lower()}.json", garden_content.images)
 
 
 def render_failure(session: date, reason: str, symbols: list[str], attempts: int, lang: str, *, mode="CLOSE") -> Report:

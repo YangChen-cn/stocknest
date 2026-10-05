@@ -12,6 +12,7 @@ dependencies = [
   "openbb-core==1.6.13", "openbb-equity==1.6.2", "openbb-yfinance==1.6.3",
   "pandas>=2.2,<3",
   "PyYAML>=6,<7", "pandas-market-calendars>=4.6,<6",
+  "pillow>=12.3,<13",
 ]
 
 [project.optional-dependencies]
@@ -20,6 +21,9 @@ dev = ["pytest>=8,<10"]
 
 [tool.setuptools.packages.find]
 include = ["stockwatch*"]
+
+[tool.setuptools.package-data]
+stockwatch = ["assets/garden/*.png", "assets/garden/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

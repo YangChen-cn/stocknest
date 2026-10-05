@@ -118,6 +118,16 @@ Deploy your **private** repo to [Streamlit's free hosting](https://share.streaml
 | AI-readable JSON | Every email carries a versioned JSON block + attachment; dashboard exports a live snapshot | [使用说明 · 用 GPT / Gmail 分析日报](使用说明.md) |
 | macOS login startup | Auto-start the local dashboard at login via launchd | [使用说明 · 本机 Gmail 与登录自启](使用说明.md) |
 
+## A holding garden and seasonal letters
+
+![Watercolor holding garden — entirely synthetic mature-stage example](docs/images/garden-demo.png)
+
+Each holding has a watercolor plant from 12 botanical families, including six flowers. Five stages follow **calendar days in the current holding cycle**; adding shares does not reset its age. New positions plant seedlings, additions leave watering marks, partial sales leave pruning marks, and closed holdings appear in that period’s weekly/monthly botanical notes. Flowering varieties naturally bloom as they mature; separate flower ornaments commemorate strictly verified closing portfolio NAV highs.
+
+Daily reports carry a small inline garden; weekly/monthly reports include period events and growth milestones. The dashboard garden is folded below the holdings table. Warm light, gentle rain and clouds reflect the relevant portfolio return; missing data stays neutral and plants remain healthy during declines. Seasonal decorations are illustrative, not real weather. Each page/report includes one sourced Chinese or English classical extract, alternating by report date, with a reading note when needed.
+
+Everything is composed offline from the existing ledger, loaded prices and matching history. No extra quote requests, garden state, notifications or changes to financial JSON. If images cannot render, the written garden remains readable. See [使用说明](使用说明.md) for the exact growth boundaries and behavior.
+
 ## How the numbers are computed
 
 - **Average cost**: buy fees join the cost basis; partial sales realize `proceeds − sell fee − removed cost`; fees are never deducted twice. This is not tax-lot accounting.
