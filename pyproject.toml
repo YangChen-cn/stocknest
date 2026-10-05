@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stockwatch"
-version = "1.0.0"
+version = "1.1.0"
 description = "A local, factual US portfolio tracker with OpenBB and daily Gmail reports"
 requires-python = ">=3.11"
 license = {file = "LICENSE"}
