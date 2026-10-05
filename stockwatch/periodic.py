@@ -91,10 +91,11 @@ def render_summary(mode, session, portfolio, quotes, config, history, now, demo=
                       t('Period holdings return', lang), percent(metrics['portfolio_return_pct'], lang=lang),
                       right_color=value_color(metrics['portfolio_return_pct']))
     content = notice + hero + email_metrics(rows[2:])
-    content += garden_content.html + email_section(t('Holdings', lang), ''.join(holding_rows)) + intro
+    content += email_section(t('Holdings', lang), ''.join(holding_rows)) + intro
     if note:
         content += f"<p style='color:{NEUTRAL};font-size:13px'>{escape(note)}</p>"
     content += f"<p style='font-size:13px;color:{NEUTRAL}'>{escape(t('JSON data is attached for your own analysis.', lang))}</p>"
+    content += garden_content.html
     html = email_shell(title, f"{start} — {end}", content, lang, closing=closing, closing_html=reflection_html(end, lang))
     if garden_content.text:
         lines.extend(["", garden_content.text])

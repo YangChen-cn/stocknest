@@ -126,7 +126,7 @@ Each holding has a watercolor plant from 12 botanical families, including six fl
 
 Daily reports carry a small inline garden; weekly/monthly reports include period events and growth milestones. The dashboard garden is folded below the holdings table. Warm light, gentle rain and clouds reflect the relevant portfolio return; missing data stays neutral and plants remain healthy during declines. Seasonal decorations are illustrative, not real weather. Each page/report includes one sourced Chinese or English classical extract, alternating by report date, with a reading note when needed.
 
-Plant metadata uses two aligned rows with dates kept intact. Holdings use compact cards; period-high dates are grouped together, and classical extracts have deliberate line breaks with separate credits.
+Emails show metrics, holdings and other stock data first, followed by the garden and then the classical extract. Plant metadata uses two aligned rows with dates kept intact. Holdings use compact cards; period-high dates are grouped together, and classical extracts have deliberate line breaks with separate credits.
 
 Everything is composed offline from the existing ledger, loaded prices and matching history. No extra quote requests, garden state, notifications or changes to financial JSON. If images cannot render, the written garden remains readable. See [使用说明](使用说明.md) for the exact growth boundaries and behavior.
 

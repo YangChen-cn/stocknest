@@ -265,9 +265,9 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
     attachment_note = tr("JSON data is attached for your own analysis.")
     html = email_shell(heading, f"{session.isoformat()} · {timing}",
                        demo_banner + warning_banner + hero + milestone_html + summary_block
-                       + record_html + garden_content.html + holdings_block + performance_block + watch_html + alerts_block
+                       + record_html + holdings_block + performance_block + watch_html + alerts_block
                        + notable_block + near_block + errors_block + footer
-                       + f"<p style='font-size:13px;color:{NEUTRAL}'>{escape(attachment_note)}</p>", lang,
+                       + f"<p style='font-size:13px;color:{NEUTRAL}'>{escape(attachment_note)}</p>" + garden_content.html, lang,
                        closing=quote_line, closing_html=reflection_html(session, lang))
     if garden_content.text:
         lines.extend(["", garden_content.text])
