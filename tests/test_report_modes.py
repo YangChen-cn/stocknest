@@ -310,10 +310,12 @@ def test_report_epigraph_rotates_by_day_and_language():
     en = {"portfolio": {"language": "en"}, "watchlist": {}}
     first = render_report(DAY, book, {}, zh, [])
     expected = classic(DAY)[1][0]
-    from html import unescape
-    assert expected in first.text and expected.replace('\n', '<br>') in unescape(first.html)
+    from bs4 import BeautifulSoup
+    def visible_verse(html):
+        return ''.join(BeautifulSoup(html, 'html.parser').select_one('.sw-classic').get_text(' ', strip=True).split())
+    assert expected in first.text and ''.join(expected.split()) in visible_verse(first.html)
     english = render_report(DAY, book, {}, en, [])
-    assert expected in english.text and expected.replace('\n', '<br>') in unescape(english.html)
+    assert expected in english.text and ''.join(expected.split()) in visible_verse(english.html)
     assert reflection(DAY, 'zh-CN') in first.text
     assert reflection(DAY, 'en') in english.text
     other = render_report(date(2026, 10, 5), book, {}, zh, [])

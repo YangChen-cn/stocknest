@@ -436,6 +436,18 @@ CLASSICS = {
 
 ZH.update({
     "Holding garden": "持仓花园",
+    "As of {date}": "截至 {date}",
+    "{days} days held": "连续持有 {days} 天",
+    "Added to holding": "养护 · 加仓",
+    "Reduced holding": "修枝 · 减仓",
+    "Closed holding": "清仓 · 收作花笺",
+    "Closing NAV high": "收盘净值新高",
+    "{count} confirmed closing NAV highs": "收盘净值新高 · {count} 次",
+    "Unrealized return": "持仓未实现收益率",
+    "Seasonal illustration": "季节插画",
+    "Not actual weather": "并非真实天气",
+    "Holding time only": "映照持有时间",
+    "Not investment quality": "不评价投资优劣",
     "Garden through {date}": "花园截至 {date}",
     "This week's garden": "本周花事",
     "This month's garden": "本月花事",

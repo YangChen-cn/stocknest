@@ -14,7 +14,7 @@ from stockwatch.report_data import append_data, report_data, serialize_data
 from stockwatch.garden import Garden
 from stockwatch.garden_render import garden_view
 
-from stockwatch.presentation import GREEN, RED, NEUTRAL, SOFT, InlineImage, email_section, email_shell, reflection, reflection_html, record_note, value_color
+from stockwatch.presentation import GREEN, RED, NEUTRAL, SOFT, InlineImage, atomic, email_hero, email_holding, email_metrics, email_section, email_shell, reflection, reflection_html, record_note, value_color
 
 
 def money(value, *, signed: bool = False, lang: str = "en") -> str:
@@ -76,17 +76,11 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
 
     section = email_section
 
-    def value_rows(rows) -> str:
-        return "".join(
-            f"<tr><td style='padding:6px 0;font-size:14px;color:{NEUTRAL}'>{escape(name)}</td>"
-            f"<td style='padding:6px 0;text-align:right;font-weight:600;color:{color}'>{escape(value)}</td></tr>"
-            for name, value, color in rows)
-
     def list_rows(items: list[str]) -> str:
         rows = []
         for index, item in enumerate(items):
             border = "" if index == len(items) - 1 else "border-bottom:1px solid #e8ece6;"
-            rows.append(f"<div style='padding:7px 2px;font-size:13px;{border}'>{escape(item)}</div>")
+            rows.append(f"<div style='padding:9px 2px;font-size:13px;line-height:1.75;text-wrap:pretty;overflow-wrap:break-word;{border}'>{escape(item)}</div>")
         return "".join(rows)
 
     def styled_table(headers: tuple[str, ...], rows_html: str) -> str:
@@ -147,25 +141,18 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
         thesis = config["watchlist"].get(row["symbol"], {}).get("thesis", "").strip()
         if thesis:
             lines.append(tr("Thesis") + ": " + thesis)
-        shade = "#ffffff" if index % 2 == 0 else "#f7f8f5"
-        base = f"padding:10px 8px;border-bottom:1px solid #e8ece6;background:{shade}"
-        total_color = value_color(row["unrealized_pl"])
-        cells = [
-            f"<td style='{base}'><strong>{escape(row['symbol'])}</strong><br><span style='color:{NEUTRAL}'>{escape(tr('{shares} shares', shares=row['shares']))}</span></td>",
-            f"<td style='{base}'>{escape(m(row['price']))}<br><small style='color:{value_color(row['daily_pct'])}'>{escape(tr('{value} today', value=p(row['daily_pct'])))}</small></td>"]
+        details = [(tr("Daily %"), p(row['daily_pct']), value_color(row['daily_pct']))]
         if not intraday:
-            cells.extend([
-            f"<td style='{base};color:{total_color}'>{escape(m(row['unrealized_pl'], signed=True))}<br><small>{escape(tr('{value} total', value=p(row['return_pct'])))}</small></td>",
-            f"<td style='{base}'>{escape(p(row['weight_pct'], signed=False))}</td>"])
+            details.extend([(tr("Unrealized P/L"), m(row['unrealized_pl'], signed=True), value_color(row['unrealized_pl'])),
+                            (tr("Unrealized return"), p(row['return_pct']), value_color(row['return_pct'])),
+                            (tr("Weight"), p(row['weight_pct'], signed=False), NEUTRAL)])
         if intraday:
             stamp = quotes[row["symbol"]].price_at
-            cells.append(f"<td style='{base}'>{escape(stamp.astimezone(NY).strftime('%H:%M %Z') if stamp else tr('Data unavailable'))}</td>")
-        holding_html.append("<tr>" + "".join(cells) + "</tr>")
-        if thesis:
-            holding_html.append(f"<tr><td colspan='{3 if intraday else 4}' style='padding:0 8px 10px;color:{NEUTRAL};font-size:13px;white-space:pre-wrap;word-break:break-word'>{escape(tr('Thesis'))}: {escape(thesis)}</td></tr>")
+            details.append((tr("Price time (New York)"), stamp.astimezone(NY).strftime('%H:%M %Z') if stamp else tr('Data unavailable'), NEUTRAL))
+        holding_html.append(email_holding(row['symbol'], m(row['price']), row['shares'], details, lang, thesis=thesis))
     if not portfolio["holdings"]:
         lines.append(tr("No current holdings."))
-        holding_html.append(f"<tr><td colspan='{3 if intraday else 4}' style='padding:12px'>{escape(tr('No current holdings.'))}</td></tr>")
+        holding_html.append(f"<p>{escape(tr('No current holdings.'))}</p>")
     watch_html = ""
     highlights = intraday_watchlist_highlights(config, quotes, {row["symbol"] for row in portfolio["holdings"]}, session) if intraday else []
     if highlights:
@@ -238,33 +225,30 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
                   tr("Daily P/L adjusts for recorded buys, sells and fees; trade-day returns use daily timing assumptions.") if intraday else tr("Holdings-only performance excludes dividends and cash. Realized P/L uses average cost, not tax lots."),
                   tr("Sources: {sources}", sources=", ".join(sorted({tr(quote.source) for quote in quotes.values()})))])
 
-    hero = f"""<table role="presentation" style="width:100%"><tr>
-<td style="vertical-align:bottom"><p style="margin:0;font-size:12px;color:{NEUTRAL}">{escape(tr("Market Value"))}</p>
-<p class="mail-hero" style="margin:2px 0 0;font-size:34px;font-weight:600">{escape(m(portfolio["market_value"]))}</p></td>
-<td style="vertical-align:bottom;text-align:right"><p style="margin:0;font-size:12px;color:{NEUTRAL}">{escape(tr("Daily P/L"))}</p>
-<p class="mail-hero" style="margin:2px 0 0;font-size:28px;font-weight:600;color:{value_color(portfolio["daily_pl"])}">{escape(m(portfolio["daily_pl"], signed=True))}</p>
-<p style="margin:0;font-size:12px;color:{value_color(portfolio["daily_pct"])}">{escape(p(portfolio["daily_pct"]))}</p></td></tr></table>"""
-    milestone_html = (f"<p style='background:{SOFT};color:{GREEN};padding:10px 12px;border-radius:6px;margin:12px 0'>↗ {escape(milestone_line)}</p>") if milestone_line else ""
+    hero = email_hero(tr("Market Value"), m(portfolio["market_value"]), tr("Daily P/L"), m(portfolio["daily_pl"], signed=True),
+                      right_color=value_color(portfolio["daily_pl"]), detail=p(portfolio["daily_pct"]))
+    milestone_html = (f"<div aria-label='{escape(milestone_line)}' style='background:{SOFT};color:{GREEN};padding:12px 14px;border-radius:6px;margin:12px 0'>"
+                      f"<div style='font-size:14px'>↗ {escape(tr('Closing NAV high'))}</div>"
+                      f"<div style='font-size:11px;margin-top:4px'>{atomic(session.isoformat())} · {escape(tr('Completed NYSE session · USD'))}</div></div>") if milestone_line else ""
     if not intraday:
         labeled = [(tr("Total Cost"), m(portfolio["total_cost"]), NEUTRAL),
                    (tr("Unrealized P/L"), m(portfolio["unrealized_pl"], signed=True), value_color(portfolio["unrealized_pl"])),
-                   (tr("Holding unrealized return"), p(portfolio["return_pct"]), value_color(portfolio["return_pct"]))]
-        summary_block = ("<table role='presentation' style='width:100%;margin:10px 0 0;border-top:1px solid #e8ece6'>"
-                         + value_rows(labeled) + "</table>")
+                   (tr("Unrealized return"), p(portfolio["return_pct"]), value_color(portfolio["return_pct"]))]
+        summary_block = ("<div style='margin:10px 0 0;border-top:1px solid #e8ece6'>"
+                         + email_metrics(labeled) + "</div>")
     else:
         summary_block = ""
     demo_banner = (f"<div style='background:#fef7e0;border:1px solid #fdd663;border-radius:10px;padding:8px 12px;"
                    f"margin:0 0 10px;color:#7c5800;font-size:12px'>⚠️ {escape(tr('SIMULATED DEMO DATA — not live market prices'))}</div>") if demo else ""
     warning_banner = (f"<div style='background:#fce8e6;border:1px solid #f6aea9;border-radius:10px;padding:8px 12px;"
                       f"margin:0 0 10px;color:{RED};font-size:12px'>{escape(data_warning)}</div>") if data_warning else ""
-    holdings_headers = ("Symbol", "Price / Day", "Price time (New York)") if intraday else ("Symbol", "Price / Day", "P/L / Return", "Weight")
-    holdings_block = section(tr("Holdings"), styled_table(holdings_headers, "".join(holding_html)))
+    holdings_block = section(tr("Holdings"), "".join(holding_html))
     performance_block = ""
     if performance_rows:
         history_note = tr("History through {date}; excludes dividends and cash.", date=performance["points"][-1]["date"])
         performance_block = section(tr("Performance"),
-                                    f"<table role='presentation' style='width:100%'>{value_rows(performance_rows)}</table>"
-                                    f"<p style='margin:8px 0 0;font-size:11px;color:{NEUTRAL}'>{escape(history_note)}</p>")
+                                    email_metrics(performance_rows)
+                                    + f"<p style='margin:10px 0 0;font-size:11px;line-height:1.75;color:{NEUTRAL};text-wrap:balance'>{escape(history_note)}</p>")
     alerts_body = (f"<div style='background:#fef7e0;border-radius:8px;padding:2px 12px'>{list_rows(alert_messages)}</div>"
                    if alert_messages else f"<p style='margin:2px 0;font-size:14px;color:{NEUTRAL}'>{escape(tr('No new alerts.'))}</p>")
     alerts_block = section(tr("Alerts"), alerts_body) if alert_messages else f"<p style='color:{NEUTRAL};font-size:14px;margin:20px 0 0'>{escape(tr('No new alerts.'))}</p>"
@@ -274,8 +258,8 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
                           list_rows(distances or [tr("No candidates within 5% of target.")])) if distances or intraday else "")
     errors_block = (section(tr("Data availability"), f"<div style='background:#fce8e6;border-radius:8px;padding:2px 12px'>{list_rows(errors)}</div>")
                     if errors else "")
-    footer = (f"<p style='font-size:11px;color:#80868b;line-height:1.6;margin:18px 0 0;padding-top:12px;border-top:1px solid #e8eaed'>"
-              f"{escape(lines[-3])}<br>{escape(lines[-2])}<br>{escape(lines[-1])}</p>")
+    footer = (f"<div style='font-size:11px;color:{NEUTRAL};line-height:1.75;margin:20px 0 0;padding-top:12px;border-top:1px solid {SOFT}'>"
+              + "".join(f"<p style='margin:6px 0;text-wrap:pretty'>{escape(line)}</p>" for line in lines[-3:]) + "</div>")
     note = record_note(performance, lang)
     record_html = f"<p style='font-size:13px;color:{NEUTRAL}'>{escape(note)}</p>" if note else ""
     attachment_note = tr("JSON data is attached for your own analysis.")

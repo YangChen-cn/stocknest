@@ -43,6 +43,7 @@ h1 {{font-size:2.4rem!important;}} h2 {{font-size:1.45rem!important;}} h3 {{font
 .sw-record {{font-size:13px;color:{NEUTRAL};margin:4px 0 12px;}}
 .sw-footer {{color:{NEUTRAL};font-size:13px;border-top:1px solid {BORDER};padding-top:16px;margin-top:20px;}}
 .sw-garden {{max-width:920px;margin:0 auto!important;}}
+[data-testid="stAppViewContainer"] .sw-garden > h2 {{display:none;}}
 .sw-garden img {{margin-left:auto!important;margin-right:auto!important;}}
 .sw-classic {{border-left:2px solid #c6b58d;max-width:920px;}}
 .sw-classic a {{text-decoration:none;border-bottom:1px solid #c6b58d;}}

@@ -6,7 +6,7 @@ from html import escape
 
 from stockwatch.calendar import previous_session
 from stockwatch.i18n import language, t
-from stockwatch.presentation import NEUTRAL, BORDER, SOFT, email_shell, email_section, reflection, reflection_html, record_note, value_color
+from stockwatch.presentation import INK, NEUTRAL, BORDER, SOFT, email_hero, email_holding, email_metrics, email_shell, email_section, reflection, reflection_html, record_note, value_color
 from stockwatch.garden import Garden, build_garden
 from stockwatch.garden_render import garden_view
 from stockwatch.notifications.email import EmailDeliveryError, EmailSettings, send_report
@@ -66,28 +66,31 @@ def render_summary(mode, session, portfolio, quotes, config, history, now, demo=
             formatted = percent(value, lang=lang) if is_percent else money(value, signed=label in ("Period P/L", "Realized P/L"), lang=lang)
         lines.append(f"{t(label, lang)}: {formatted}")
         color = value_color(value) if is_percent or label in ("Period P/L", "Realized P/L") else NEUTRAL
-        rows.append(f"<tr><td style='padding:8px 0;border-bottom:1px solid {BORDER}'>{escape(t(label, lang))}</td><td style='text-align:right;color:{color};font-weight:600'>{escape(formatted)}</td></tr>")
+        rows.append((t(label, lang), formatted, color))
     lines.extend(["", t("Holdings", lang)])
     for holding in portfolio["holdings"]:
         symbol = holding["symbol"]
         line = f"{symbol}: {money(holding['price'], lang=lang)} · {holding['shares']} {t('Shares', lang)} · {t('Market Value', lang)} {money(holding['market_value'], lang=lang)} · {t('Return %', lang)} {percent(holding['return_pct'], lang=lang)}"
         lines.append(line)
-        holding_rows.append(f"<p style='margin:10px 0'>{escape(line)}</p>")
         thesis = config["watchlist"].get(symbol, {}).get("thesis", "").strip()
         if thesis:
             lines.append(thesis)
-            holding_rows.append(f"<p style='white-space:pre-wrap;overflow-wrap:anywhere;color:{NEUTRAL};font-size:14px'>{escape(thesis)}</p>")
+        holding_rows.append(email_holding(symbol, money(holding['price'], lang=lang), holding['shares'],
+                                         [(t('Market Value', lang), money(holding['market_value'], lang=lang), INK),
+                                          (t('Return %', lang), percent(holding['return_pct'], lang=lang), value_color(holding['return_pct']))], lang, thesis=thesis))
     if demo:
         lines.append(t("Demo mode", lang))
+    if not holding_rows:
+        holding_rows.append(f"<p>{escape(t('No current holdings.', lang))}</p>")
     notice = f"<p style='background:#fff4d9;padding:8px 12px'>{escape(t('SIMULATED DEMO DATA — not live market prices', lang))}</p>" if demo else ""
-    intro = f"<p style='color:{NEUTRAL};font-size:14px'>{escape(lines[2])}<br>{escape(lines[3])}</p>"
+    intro = "".join(f"<p style='color:{NEUTRAL};font-size:11px;line-height:1.75;margin:6px 0;text-wrap:pretty'>{escape(line)}</p>" for line in lines[2:4])
     note = record_note(history, lang)
     closing = reflection(end, lang)
     garden_content = garden_view(garden, lang)
-    hero = (f"<table role='presentation' style='width:100%;background:{SOFT};padding:12px;border-radius:8px'><tr>"
-            f"<td style='vertical-align:top'>{escape(t('Market Value', lang))}<br><strong class='mail-hero' style='font-size:30px'>{escape(money(portfolio['market_value'], lang=lang))}</strong></td>"
-            f"<td style='vertical-align:top;text-align:right'>{escape(t('Period holdings return', lang))}<br><strong class='mail-hero' style='font-size:26px;color:{value_color(metrics['portfolio_return_pct'])}'>{escape(percent(metrics['portfolio_return_pct'], lang=lang))}</strong></td></tr></table>")
-    content = notice + hero + f"<table class='mail-table' style='width:100%;border-collapse:collapse'>{''.join(rows[2:])}</table>"
+    hero = email_hero(t('Market Value', lang), money(portfolio['market_value'], lang=lang),
+                      t('Period holdings return', lang), percent(metrics['portfolio_return_pct'], lang=lang),
+                      right_color=value_color(metrics['portfolio_return_pct']))
+    content = notice + hero + email_metrics(rows[2:])
     content += garden_content.html + email_section(t('Holdings', lang), ''.join(holding_rows)) + intro
     if note:
         content += f"<p style='color:{NEUTRAL};font-size:13px'>{escape(note)}</p>"

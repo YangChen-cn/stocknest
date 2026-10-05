@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from stockwatch.garden import Garden, GardenEvent, SPECIES, STAGES
 from stockwatch.i18n import t
-from stockwatch.presentation import BACKGROUND, BORDER, HEADING_FONT, INK, NEUTRAL, InlineImage
+from stockwatch.presentation import BACKGROUND, BORDER, HEADING_FONT, INK, NEUTRAL, InlineImage, atomic
 
 
 @lru_cache(maxsize=3)
@@ -153,17 +153,57 @@ def garden_view(garden: Garden | None, lang: str) -> GardenView:
     except (OSError, ValueError):
         extra.append(t("Botanical illustration unavailable; the written garden remains below.", lang))
     def paragraphs(items):
-        return "".join(f"<p style='margin:5px 0;font-size:12px;overflow-wrap:anywhere'>{escape(line)}</p>" for line in items)
+        return "".join(f"<p style='margin:6px 0;font-size:12px;line-height:1.75;overflow-wrap:break-word;text-wrap:pretty'>{escape(line)}</p>" for line in items)
+    plant_rows = []
+    for plant in garden.plants:
+        label = atomic(plant.symbol) + f" <span style='font-size:12px;color:{NEUTRAL}'>· {escape(t(SPECIES[plant.species], lang))}</span>"
+        plant_rows.append(
+            f"<tr><td style='padding:11px 8px 4px 0;font-size:14px;font-weight:600;vertical-align:top'>{label}</td>"
+            f"<td style='padding:11px 0 4px;text-align:right;font-size:12px;color:{NEUTRAL};vertical-align:top'>{atomic(t(STAGES[plant.stage], lang))}</td></tr>"
+            f"<tr><td style='padding:0 8px 11px 0;font-size:11px;color:{NEUTRAL};border-bottom:1px solid {BORDER}'>{atomic(t('{days} days held', lang, days=plant.days))}</td>"
+            f"<td style='padding:0 0 11px;text-align:right;font-size:11px;color:{NEUTRAL};border-bottom:1px solid {BORDER}'>{atomic(t('Since {date}', lang, date=plant.since.isoformat()))}</td></tr>")
+    plants_html = ("<table class='garden-plants' role='presentation' style='width:100%;border-collapse:collapse'>"
+                   + "".join(plant_rows) + "</table>") if plant_rows else paragraphs(plants)
+
+    def events_html(events):
+        rendered = []
+        high_dates = [event.day for event in events if rich and event.kind == "high"]
+        for event in events:
+            if rich and event.kind == "high":
+                continue
+            labels = {"new": "New seedling", "water": "Added to holding", "prune": "Reduced holding",
+                      "archive": "Closed holding", "high": "Closing NAV high"}
+            label = t(STAGES[event.stage], lang) if event.kind == "growth" else t(labels[event.kind], lang)
+            description = atomic(label)
+            if event.kind in ("growth", "archive"):
+                description += " · " + atomic(t("{days} days held", lang, days=event.days))
+            name = event.symbol or label
+            detail = (f"<tr><td colspan='2' style='padding:0 0 9px;font-size:12px;color:{NEUTRAL};text-wrap:pretty'>{description}</td></tr>"
+                      if event.symbol else "")
+            rendered.append(f"<tr aria-label='{escape(event_line(event, lang), quote=True)}'><td style='padding:8px 8px 3px 0;font-size:13px;vertical-align:top'>{atomic(name)}</td>"
+                            f"<td style='padding:8px 0 3px;text-align:right;font-size:11px;color:{NEUTRAL};vertical-align:top'>{atomic(event.day.isoformat())}</td></tr>{detail}")
+        highs = ""
+        if high_dates:
+            dates = "".join(f"<span style='display:inline-block;white-space:nowrap;margin:3px 4px 3px 0;padding:3px 6px;background:white;border-radius:4px;font-size:10px;color:{NEUTRAL}'>{day.isoformat()}</span>" for day in high_dates)
+            highs = f"<div style='margin-top:10px'><div style='font-size:12px;margin-bottom:5px'>{escape(t('{count} confirmed closing NAV highs', lang, count=len(high_dates)))}</div>{dates}</div>"
+        return "<table role='presentation' style='width:100%;border-collapse:collapse'>" + "".join(rendered) + "</table>" + highs
+    visible_events = [event for event in garden.events if not rich or event.kind != "archive"]
+    current_html = events_html(visible_events) if visible_events else paragraphs(current_events)
     body = (f"<section class='sw-garden' style='margin:20px 0;padding:18px;background:{BACKGROUND};border:1px solid {BORDER};border-radius:10px;color:{INK}'>"
             f"<h2 style='font-family:{HEADING_FONT};font-size:18px;margin:0'>{escape(title)}</h2>"
-            f"<p style='font-size:12px;color:{NEUTRAL};margin:6px 0'>{escape(heading)} · {escape(atmosphere)}</p>"
-            + image_html + paragraphs(plants)
-            + f"<h3 style='font-size:14px;margin:14px 0 6px'>{escape(events_title)}</h3>" + paragraphs(current_events))
+            f"<table role='presentation' style='width:100%;border-collapse:collapse;margin:8px 0 0;font-size:11px;color:{NEUTRAL}'><tr>"
+            f"<td style='padding-right:8px'>{atomic(t('As of {date}', lang, date=garden.as_of.isoformat()))}</td>"
+            f"<td style='text-align:right'>{atomic(atmosphere)}</td></tr></table>"
+            + image_html + plants_html
+            + f"<h3 style='font-size:14px;margin:18px 0 4px'>{escape(events_title)}</h3>" + current_html)
     lines = [title, heading, atmosphere, *plants, events_title, *current_events]
     if archives:
         archive_title = t("Past botanical notes", lang)
         lines += [archive_title, *archives]
-        body += f"<h3 style='font-size:14px;margin:14px 0 6px'>{escape(archive_title)}</h3>" + paragraphs(archives)
+        body += f"<h3 style='font-size:14px;margin:18px 0 4px'>{escape(archive_title)}</h3>" + events_html([event for event in garden.events if event.kind == "archive"])
     lines += [*extra, notice]
-    body += paragraphs(extra) + f"<p style='font-size:11px;color:{NEUTRAL};margin:12px 0 0'>{escape(notice)}</p></section>"
+    short_notice = (("Seasonal illustration", "Not actual weather"), ("Holding time only", "Not investment quality"))
+    body += paragraphs(extra) + f"<table role='presentation' style='width:100%;border-collapse:collapse;margin-top:12px;font-size:10px;color:{NEUTRAL}'>"
+    body += "".join(f"<tr><td style='padding:3px 8px 3px 0'>{atomic(t(left, lang))}</td>"
+                    f"<td style='padding:3px 0;text-align:right'>{atomic(t(right, lang))}</td></tr>" for left, right in short_notice) + "</table></section>"
     return GardenView("\n".join(lines), body, images)
