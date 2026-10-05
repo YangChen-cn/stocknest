@@ -2,6 +2,9 @@ name: StockWatch CI
 
 on:
   push:
+    # Tags point at commits that were already tested on their branch push.
+    tags-ignore:
+      - '**'
     paths-ignore:
       - '**.md'
       - 'docs/**'

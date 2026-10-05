@@ -226,8 +226,10 @@ def test_workflow_permissions_schedule_and_file_whitelist():
     assert artifact["with"]["retention-days"] == "3"
     ci = yaml.load((ROOT / ".github/workflows/ci.yml").read_text(), Loader=yaml.BaseLoader)
     assert set(ci["on"]) == {"push", "pull_request"} and ci["permissions"] == {"contents": "read"}
-    # Markdown/docs-only pushes never spend Actions minutes on the full suite.
+    # Markdown/docs-only pushes never spend Actions minutes on the full suite,
+    # and tags are already tested as their commits.
     assert {"**.md", "docs/**"} <= set(ci["on"]["push"].get("paths-ignore", []))
+    assert ci["on"]["push"].get("tags-ignore") == ["**"]
     commands = "\n".join(step.get("run", "") for step in ci["jobs"]["test"]["steps"])
     assert "python -m pytest" in commands and "python -m pip check" in commands
     assert "stockwatch.daily" not in commands
