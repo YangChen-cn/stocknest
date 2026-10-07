@@ -154,7 +154,8 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
         lines.append(tr("No current holdings."))
         holding_html.append(f"<p>{escape(tr('No current holdings.'))}</p>")
     watch_html = ""
-    highlights = intraday_watchlist_highlights(config, quotes, {row["symbol"] for row in portfolio["holdings"]}, session) if intraday else []
+    held_symbols = {row["symbol"] for row in portfolio["holdings"]}
+    highlights = intraday_watchlist_highlights(config, quotes, held_symbols, session) if intraday else []
     if highlights:
         heading_watch = tr("Watchlist moves ≥5% (up to 3)")
         ranking = tr("Absolute daily change reaches 5%; ranked by magnitude. Normal-session snapshots, not final closes.")
@@ -173,11 +174,12 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
         headers = ("Symbol", "Current Price", "Daily %", "Price time (New York)")
         watch_html = section(heading_watch, f"<p style='font-size:12px;color:{NEUTRAL};margin:0 0 8px'>{escape(ranking)}</p>"
                              + styled_table(headers, "".join(cells)))
-    if not intraday and config["watchlist"]:
+    if not intraday and any(symbol not in held_symbols for symbol in config["watchlist"]):
         rows = watchlist_rows if watchlist_rows is not None else [
             {"Symbol": symbol, "Current Price": quotes.get(symbol, Quote(symbol)).price,
              "Daily %": quotes.get(symbol, Quote(symbol)).daily_move_pct, "5D %": None, "1M %": None}
             for symbol in config["watchlist"]]
+        rows = [row for row in rows if row["Symbol"] not in held_symbols]
         lines.extend(["", tr("Watchlist summary (closing prices)")])
         watch_cells = []
         for index, row in enumerate(rows):
@@ -196,7 +198,6 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
     distances = target_distances(config, quotes) if not intraday else []
     unusual = []
     if intraday:
-        held_symbols = {row["symbol"] for row in portfolio["holdings"]}
         for symbol, quote in sorted(quotes.items()):
             # Watch-only movements belong in the capped summary; configured alerts remain independent.
             if symbol in config["watchlist"] and symbol not in held_symbols:
@@ -205,6 +206,8 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
             if not quote.error and quote.daily_move_pct is not None and abs(quote.daily_move_pct) >= threshold:
                 unusual.append(tr("{symbol}: {change} today (movement threshold {threshold:g}%)", symbol=symbol, change=p(quote.daily_move_pct), threshold=threshold))
         for symbol, entry in config["watchlist"].items():
+            if symbol in held_symbols:
+                continue
             target = entry.get("buy_below", entry.get("alerts", {}).get("below"))
             quote = quotes.get(symbol)
             if target and quote and quote.price is not None and not quote.error:

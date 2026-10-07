@@ -23,6 +23,36 @@ def app(tmp_path, monkeypatch):
     return AppTest.from_file(str(ROOT / "app.py"), default_timeout=15), tmp_path
 
 
+def test_watchlist_hides_holdings_and_bulk_delete_preserves_their_settings(app, monkeypatch):
+    from datetime import date
+    from stockwatch import ui
+    from stockwatch.portfolio import calculate, positions
+    from stockwatch.providers.base import Quote
+    from stockwatch.storage import validate_transactions
+    app_test, root = app
+    holding_settings = {"thesis": "Keep this note", "alerts": {"below": 9}}
+    save_config(root / "config.yaml", {"portfolio": {}, "watchlist": {"XYZ": holding_settings, "WATCH": {"thesis": "Candidate"}}})
+    holding_settings = load_config(root / "config.yaml")["watchlist"]["XYZ"]
+    save_transactions(root / "data/transactions.csv", [{"date": "2026-09-28", "symbol": "XYZ", "side": "BUY", "shares": "1", "price": "10"}])
+    def snapshot(config, rows, day, demo):
+        quotes = {symbol: Quote(symbol, price=12, previous_close=11) for symbol in {"XYZ", "WATCH"}}
+        return calculate(positions(validate_transactions(rows), date(2026, 10, 1)), quotes), quotes
+    snapshot.clear = lambda: None
+    monkeypatch.setattr(ui, "cached_snapshot", snapshot)
+    def watch_snapshot(*args):
+        portfolio, quotes = snapshot(*args)
+        return portfolio, quotes, {}
+    monkeypatch.setattr(ui, "cached_watchlist_snapshot", watch_snapshot)
+    app_test.run()
+    app_test.sidebar.radio[0].set_value("Watchlist & Alerts").run()
+    assert not app_test.exception
+    assert all(frame.value["Symbol"].tolist() == ["WATCH"] for frame in app_test.dataframe)
+    app_test.session_state["watchlist_editor_False"] = {"edited_rows": {}, "deleted_rows": [0], "added_rows": []}
+    next(button for button in app_test.button if button.label == "Save watchlist").click().run()
+    assert not app_test.exception
+    assert load_config(root / "config.yaml")["watchlist"] == {"XYZ": holding_settings}
+
+
 @pytest.mark.parametrize("page", ["Dashboard", "Performance", "Holdings", "Transactions", "Watchlist & Alerts", "Settings"])
 def test_all_pages_empty_and_demo(app, page):
     app_test, _ = app
@@ -357,7 +387,7 @@ def test_holding_notes_edit_and_charts_exclude_watch_only_symbols(app, monkeypat
     app_test.run()
     app_test.sidebar.radio[0].set_value("Holdings").run()
     next(w for w in app_test.text_area if w.label=="Thesis").set_value("Personal note")
-    next(w for w in app_test.button if w.label=="Save holding notes").click().run()
+    next(w for w in app_test.button if w.label=="Save holding notes & alerts").click().run()
     assert not app_test.exception
     assert load_config(root/"config.yaml")["watchlist"]["XYZ"]["thesis"]=="Personal note"
     assert selected[-1]==["XYZ"]
@@ -635,7 +665,7 @@ def test_cloud_holding_notes_enabled_other_writes_disabled_and_demo_safe(cloud_a
     assert app_test.toggle[0].disabled
     app_test.sidebar.radio[0].set_value('Holdings').run()
     next(w for w in app_test.text_area if w.label == 'Thesis').set_value('Holding note')
-    next(b for b in app_test.button if b.label == 'Save holding notes').click().run()
+    next(b for b in app_test.button if b.label == 'Save holding notes & alerts').click().run()
     assert not app_test.exception and remote['watchlist']['XYZ']['thesis'] == 'Holding note'
     # Local checkout stays untouched; both cloud writes land on GitHub.
     assert (root / 'config.yaml').read_bytes() == before

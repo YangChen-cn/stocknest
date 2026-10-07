@@ -399,65 +399,67 @@ def transactions_page(path: Path, transactions, config: dict, demo: bool):
 
 def watchlist_page(path: Path, config: dict, quotes: dict, demo: bool, portfolio: dict, as_of, histories=None):
     st.subheader(text("Candidate pool"))
-    if config["watchlist"]:
-        symbols = tuple(symbol for symbol in config["watchlist"] if quotes.get(symbol) and quotes[symbol].price is not None and not quotes[symbol].error)
+    held = {row["symbol"] for row in portfolio["holdings"]}
+    candidates = {symbol: entry for symbol, entry in config["watchlist"].items() if symbol not in held}
+    st.caption(text("Only stocks you do not hold appear here. Manage holding notes and alerts on Holdings."))
+    if candidates:
+        symbols = tuple(symbol for symbol in candidates if quotes.get(symbol) and quotes[symbol].price is not None and not quotes[symbol].error)
         if histories is None:
             with st.spinner(text("Loading candidate history…")):
                 histories = cached_candidate_history(symbols, as_of, demo)
-        rows = candidate_rows(config, {row["symbol"] for row in portfolio["holdings"]}, quotes, histories, as_of)
-        for is_held, label in ((False, "Unheld candidates"), (True, "Watched stocks you hold")):
-            selected = []
-            for row in rows:
-                if row["Held"] != is_held:
-                    continue
-                selected.append({key: "—" if value is None and (key == "Buy Below" or "Buy Below" in key) else text(value) if key == "Status" else money(value) if key in {"Current Price", "Buy Below"}
-                                 else percent(value) if key.endswith("%") or key.startswith("Distance") else value
-                                 for key, value in row.items() if key != "Held"})
-            if selected:
-                st.markdown(f"**{text(label)}**")
-                st.dataframe(tint_gains_losses(pd.DataFrame(selected).rename(columns=text)), hide_index=True, width="stretch")
+        rows = candidate_rows({**config, "watchlist": candidates}, held, quotes, histories, as_of)
+        selected = [{key: "—" if value is None and (key == "Buy Below" or "Buy Below" in key) else text(value) if key == "Status" else money(value) if key in {"Current Price", "Buy Below"}
+                     else percent(value) if key.endswith("%") or key.startswith("Distance") else value
+                     for key, value in row.items() if key != "Held"} for row in rows]
+        st.markdown(f"**{text('Unheld candidates')}**")
+        st.dataframe(tint_gains_losses(pd.DataFrame(selected).rename(columns=text)), hide_index=True, width="stretch")
         st.caption(text("Historical returns use completed sessions and exact anchors; 5D spans five trading intervals. Positive target distance means above buy_below."))
     else:
         st.info(text("Your candidate pool is empty. Add a stock below; no purchase is made."))
     with st.expander(text("Add or update a watched stock"), expanded=False):
-        symbol = symbol_picker("watch", sorted(quotes), demo)
-        base = edit_base(f"watch_{symbol}", config)
-        entry = base["watchlist"].get(symbol, {})
-        st.caption(text("Watching needs no target price or alert. Optional fields can stay empty."))
-        with st.form("watch_stock_form"):
-            thesis = st.text_input(text("Thesis"), value=entry.get("thesis", ""), key=f"thesis_{symbol}")
-            status_labels = {value: text(value) for value in WATCH_STATUSES}
-            status = st.selectbox(text("Status"), WATCH_STATUSES, index=WATCH_STATUSES.index(entry.get("status", "watching")), format_func=status_labels.__getitem__, key=f"status_{symbol}")
-            with st.expander(text("Optional targets & alerts"), expanded=False):
-                st.caption(text("Set a number to 0 to leave that optional target or alert unset."))
-                buy_below = st.number_input(text("Buy Below"), min_value=0.0, value=float(entry.get("buy_below", 0)), step=0.01, key=f"buy_below_{symbol}")
-                target = st.number_input(text("Target Shares"), min_value=0.0, value=float(entry.get("target_shares", 0)), step=1.0, key=f"target_{symbol}")
-                left, right = st.columns(2)
-                below = left.number_input(text("Below"), min_value=0.0, value=float(entry.get("alerts", {}).get("below", 0)), step=0.01, key=f"below_{symbol}")
-                move = right.number_input(text("Daily Move %"), min_value=0.0, value=float(entry.get("alerts", {}).get("daily_move_pct", 0)), step=1.0, key=f"move_{symbol}")
-            saved = st.form_submit_button(text("Save this stock"), disabled=demo or (cloud_readonly() and not editing_ready()) or not symbol)
-        if saved:
-            try:
-                updated = deepcopy(base)
-                item = {"thesis": thesis, "status": status}
-                if buy_below > 0:
-                    item["buy_below"] = buy_below
-                if target > 0:
-                    item["target_shares"] = target
-                alerts = {key: value for key, value in (("below", below), ("daily_move_pct", move)) if value > 0}
-                if alerts:
-                    item["alerts"] = alerts
-                updated["watchlist"][symbol] = item
-                notice = save_watchlist_edit(path, base, updated, hosted=cloud_readonly())
-                cached_snapshot.clear()
-                st.session_state["_stockwatch_notice"] = notice
-                st.rerun()
-            except (ValidationError, OSError) as exc:
-                st.error(localized_error(exc) if isinstance(exc, ValidationError) else text("Save failed; original file preserved."))
+        symbol = symbol_picker("watch", sorted(candidates), demo)
+        if symbol in held:
+            st.info(text("This stock is already held. Manage its notes and alerts on Holdings."))
+        else:
+            base = edit_base(f"watch_{symbol}", config)
+            entry = base["watchlist"].get(symbol, {})
+            st.caption(text("Watching needs no target price or alert. Optional fields can stay empty."))
+            with st.form("watch_stock_form"):
+                thesis = st.text_input(text("Thesis"), value=entry.get("thesis", ""), key=f"thesis_{symbol}")
+                status_labels = {value: text(value) for value in WATCH_STATUSES}
+                status = st.selectbox(text("Status"), WATCH_STATUSES, index=WATCH_STATUSES.index(entry.get("status", "watching")), format_func=status_labels.__getitem__, key=f"status_{symbol}")
+                with st.expander(text("Optional targets & alerts"), expanded=False):
+                    st.caption(text("Set a number to 0 to leave that optional target or alert unset."))
+                    buy_below = st.number_input(text("Buy Below"), min_value=0.0, value=float(entry.get("buy_below", 0)), step=0.01, key=f"buy_below_{symbol}")
+                    target = st.number_input(text("Target Shares"), min_value=0.0, value=float(entry.get("target_shares", 0)), step=1.0, key=f"target_{symbol}")
+                    left, right = st.columns(2)
+                    below = left.number_input(text("Below"), min_value=0.0, value=float(entry.get("alerts", {}).get("below", 0)), step=0.01, key=f"below_{symbol}")
+                    move = right.number_input(text("Daily Move %"), min_value=0.0, value=float(entry.get("alerts", {}).get("daily_move_pct", 0)), step=1.0, key=f"move_{symbol}")
+                saved = st.form_submit_button(text("Save this stock"), disabled=demo or (cloud_readonly() and not editing_ready()) or not symbol)
+            if saved:
+                try:
+                    updated = deepcopy(base)
+                    item = {"thesis": thesis, "status": status}
+                    if buy_below > 0:
+                        item["buy_below"] = buy_below
+                    if target > 0:
+                        item["target_shares"] = target
+                    alerts = {key: value for key, value in (("below", below), ("daily_move_pct", move)) if value > 0}
+                    if alerts:
+                        item["alerts"] = alerts
+                    updated["watchlist"][symbol] = item
+                    notice = save_watchlist_edit(path, base, updated, hosted=cloud_readonly())
+                    cached_snapshot.clear()
+                    st.session_state["_stockwatch_notice"] = notice
+                    st.rerun()
+                except (ValidationError, OSError) as exc:
+                    st.error(localized_error(exc) if isinstance(exc, ValidationError) else text("Save failed; original file preserved."))
     with st.expander(text("Edit all watchlist entries"), expanded=False):
         bulk_base = edit_base("watchlist_bulk", config)
         records = []
         for symbol, entry in bulk_base["watchlist"].items():
+            if symbol in held:
+                continue
             records.append({"Symbol": symbol, "Thesis": entry.get("thesis", ""), "Target Shares": entry.get("target_shares"),
                             "Status": entry.get("status", "watching"), "Buy Below": entry.get("buy_below"),
                             "Below": entry.get("alerts", {}).get("below"), "Daily Move %": entry.get("alerts", {}).get("daily_move_pct")})
@@ -474,9 +476,12 @@ def watchlist_page(path: Path, config: dict, quotes: dict, demo: bool, portfolio
             submitted = st.form_submit_button(text("Save watchlist"), disabled=demo or (cloud_readonly() and not editing_ready()))
         if submitted:
             try:
-                watchlist = {}
+                # Keep hidden holding settings when candidates are edited or deleted.
+                watchlist = {symbol: deepcopy(entry) for symbol, entry in bulk_base["watchlist"].items() if symbol in held}
                 for row in edited.to_dict("records"):
                     symbol = str(row["Symbol"] or "").strip().upper()
+                    if symbol in held:
+                        raise ValidationError("This stock is already held. Manage its notes and alerts on Holdings.")
                     if symbol in watchlist:
                         raise ValidationError("Duplicate symbol: {symbol}", symbol=symbol)
                     entry = {"thesis": "" if pd.isna(row["Thesis"]) else str(row["Thesis"])}
@@ -500,6 +505,8 @@ def watchlist_page(path: Path, config: dict, quotes: dict, demo: bool, portfolio
                 st.error(localized_error(exc) if isinstance(exc, ValidationError) else text("Save failed; original file preserved."))
     with st.expander(text("Data availability"), expanded=False):
         for symbol, quote in quotes.items():
+            if symbol in held:
+                continue
             st.caption(text("{symbol}: {price} · {change} today · {source}", symbol=symbol, price=money(quote.price), change=percent(quote.daily_move_pct), source=text(quote.source)) + (" · " + data_status(quote.error, st.session_state["_stockwatch_language"]) if quote.error else ""))
 
 
@@ -845,18 +852,36 @@ def main(app_name: str = "StockWatch"):
             symbol = row["symbol"]
             notes_base = edit_base(f"notes_{symbol}", config)
             entry = notes_base["watchlist"].get(symbol, {})
-            with st.expander(text("Holding notes: {symbol}", symbol=symbol), expanded=False):
+            with st.expander(text("Holding notes & alerts: {symbol}", symbol=symbol), expanded=False):
                 with st.form(f"holding_notes_{symbol}"):
                     thesis = st.text_area(text("Thesis"), value=entry.get("thesis", ""), key=f"holding_thesis_{symbol}")
                     st.caption(text("Notes are optional. Saving notes does not create a transaction or require a target price."))
-                    saved = st.form_submit_button(text("Save holding notes"), disabled=demo or (cloud_readonly() and not editing_ready()))
+                    with st.expander(text("Optional targets & alerts"), expanded=False):
+                        st.caption(text("Set a number to 0 to leave that optional target or alert unset."))
+                        buy_below = st.number_input(text("Buy Below"), min_value=0.0, value=float(entry.get("buy_below", 0)), step=0.01, key=f"holding_buy_{symbol}")
+                        target = st.number_input(text("Target Shares"), min_value=0.0, value=float(entry.get("target_shares", 0)), step=1.0, key=f"holding_target_{symbol}")
+                        left, right = st.columns(2)
+                        below = left.number_input(text("Below"), min_value=0.0, value=float(entry.get("alerts", {}).get("below", 0)), step=0.01, key=f"holding_below_{symbol}")
+                        move = right.number_input(text("Daily Move %"), min_value=0.0, value=float(entry.get("alerts", {}).get("daily_move_pct", 0)), step=1.0, key=f"holding_move_{symbol}")
+                    saved = st.form_submit_button(text("Save holding notes & alerts"), disabled=demo or (cloud_readonly() and not editing_ready()))
                 if saved:
                     try:
                         updated = deepcopy(notes_base)
-                        updated["watchlist"].setdefault(symbol, {"status": "watching"})["thesis"] = thesis
+                        item = updated["watchlist"].setdefault(symbol, {"status": "watching"})
+                        item["thesis"] = thesis
+                        for key, value in (("buy_below", buy_below), ("target_shares", target)):
+                            if value > 0:
+                                item[key] = value
+                            else:
+                                item.pop(key, None)
+                        alerts = {key: value for key, value in (("below", below), ("daily_move_pct", move)) if value > 0}
+                        if alerts:
+                            item["alerts"] = alerts
+                        else:
+                            item.pop("alerts", None)
                         notice = save_watchlist_edit(config_path, notes_base, updated, hosted=cloud_readonly())
                         cached_snapshot.clear()
-                        st.session_state["_stockwatch_notice"] = notice if cloud_readonly() else "Holding notes saved locally."
+                        st.session_state["_stockwatch_notice"] = notice if cloud_readonly() else "Holding notes and alerts saved locally."
                         st.rerun()
                     except (ValidationError, OSError) as exc:
                         st.error(localized_error(exc) if isinstance(exc, ValidationError) else text("Save failed; original file preserved."))
@@ -892,8 +917,9 @@ def main(app_name: str = "StockWatch"):
                     bars.update_layout(height=376, xaxis_title=None, yaxis_title=None, margin=dict(l=10,r=5,t=30,b=30))
                     plot(bars, key="holding_returns_chart")
         with st.expander(text("Watchlist price chart"), expanded=False):
-            if config["watchlist"]:
-                chart_prices(list(config["watchlist"]), chart_day, demo, "dashboard_watchlist", True)
+            watched = [symbol for symbol in config["watchlist"] if symbol not in held_symbols]
+            if watched:
+                chart_prices(watched, chart_day, demo, "dashboard_watchlist", True)
             else:
                 st.caption(text("No watched stocks yet. Add them on Watchlist & Alerts."))
         with st.expander(text("Reports & automation"), expanded=False):

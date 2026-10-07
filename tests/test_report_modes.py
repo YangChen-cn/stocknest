@@ -233,6 +233,31 @@ def test_intraday_ticker_failure_does_not_break_other_prices(portfolio_files):
     assert "BAD" not in state and all(alert.symbol != "BAD" for alert in pending)
 
 
+
+@pytest.mark.parametrize("loaded_rows", [False, True])
+def test_close_watchlist_excludes_held_stocks_without_changing_json(loaded_rows):
+    import json
+    from decimal import Decimal
+    from stockwatch.portfolio import calculate, Position
+    config = {"portfolio": {"language": "en"}, "watchlist": {"HELD": {"thesis": "Keep note", "alerts": {"below": 90}}, "PURE": {}}}
+    quotes = {symbol: Quote(symbol, 100, 99, session=DAY) for symbol in ("HELD", "PURE")}
+    portfolio = calculate({"HELD": Position("HELD", Decimal(1), Decimal(90))}, quotes)
+    facts = [{"Symbol": symbol, "Current Price": 100, "Daily %": 1, "5D %": 2, "1M %": 3} for symbol in ("HELD", "PURE")]
+    report = render_report(DAY, portfolio, quotes, config, [], watchlist_rows=facts if loaded_rows else None)
+    section = report.text.split("Watchlist summary (closing prices)", 1)[1].split("Alerts", 1)[0]
+    assert "PURE" in section and "HELD" not in section
+    visible_html = report.html.split('<div aria-hidden="true"', 1)[0]
+    section_html = visible_html.split("Watchlist summary (closing prices)", 1)[1].split("</section>", 1)[0]
+    assert "PURE" in section_html and "HELD" not in section_html
+    data = json.loads(report.data_json)
+    held = next(item for item in data["instruments"] if item["symbol"] == "HELD")
+    assert held["held"] and Decimal(held["configured_alerts"]["below"]) == 90
+    if loaded_rows:
+        assert Decimal(held["return_5d_pct"]) == 2
+    config["watchlist"].pop("PURE")
+    report = render_report(DAY, portfolio, quotes, config, [])
+    assert "Watchlist summary (closing prices)" not in report.text
+
 def test_pure_watchlist_in_close_summary_but_not_intraday():
     from stockwatch.portfolio import calculate
     config = {"portfolio": {"language": "zh-CN"}, "watchlist": {"PURE": {"thesis": "", "status": "watching"}}}

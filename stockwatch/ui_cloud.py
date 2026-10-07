@@ -25,7 +25,7 @@ def editing_ready():
 def reset_editors():
     st.session_state.pop('_watch_edit_bases', None)
     for key in list(st.session_state):
-        if key.startswith(('thesis_', 'status_', 'buy_below_', 'target_', 'below_', 'move_', 'holding_thesis_')) or key == 'watchlist_editor_False':
+        if key.startswith(('thesis_', 'status_', 'buy_below_', 'target_', 'below_', 'move_', 'holding_thesis_', 'holding_buy_', 'holding_target_', 'holding_below_', 'holding_move_')) or key == 'watchlist_editor_False':
             del st.session_state[key]
 
 
