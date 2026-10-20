@@ -91,7 +91,7 @@ class CloudRepository:
                          'Content-Type': 'application/json',
                          'User-Agent': 'StockWatch-cloud-config'},
             )
-            with self.opener(request, timeout=15) as response:
+            with self.opener(request, timeout=8) as response:
                 return json.loads(response.read())
         except HTTPError as exc:
             if exc.code == 409:

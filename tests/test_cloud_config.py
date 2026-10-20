@@ -23,7 +23,7 @@ class FakeGitHub:
 
     def __call__(self, request, timeout):
         self.requests.append(request)
-        assert timeout == 15
+        assert timeout == 8
         root = 'https://api.github.com/repos/Example/private'
         assert request.full_url == root or request.full_url.startswith(root + '/contents/config.yaml')
         if request.method == 'PUT':

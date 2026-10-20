@@ -160,3 +160,16 @@ def test_daily_snapshot_independent_of_email_failure(tmp_path, monkeypatch):
         state_path=tmp_path / 'state.json', output_dir=tmp_path / 'reports', provider=p, session=p.session,
         dry_run=True, market_snapshot_path=output, sender=sender, importer=lambda *a, **kw: {'disabled': True})
     assert output.read_bytes() == previous and sender.call_count == 1
+
+
+def test_optional_refresh_budget_stops_further_online_calls(market, monkeypatch):
+    import stockwatch.providers.hosted as module
+    path, q, _ = market
+    ticks = iter([0, 1, 16])
+    monkeypatch.setattr(module, "monotonic", lambda: next(ticks))
+    online = Mock(timeout=8)
+    online.get_quote.return_value = q
+    provider = HostedProvider(online, path, timeout_budget=15)
+    assert provider.get_quote("XYZ", DAY) == q
+    assert "saved snapshot" in provider.get_quote("XYZ", DAY).source
+    assert provider.blocked and online.get_quote.call_count == 1

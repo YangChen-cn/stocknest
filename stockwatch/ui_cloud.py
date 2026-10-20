@@ -22,6 +22,10 @@ def editing_ready():
     return configured() and st.session_state.get('_cloud_edit_ready', False)
 
 
+def remember_config(repository, config):
+    st.session_state['_cloud_config_view'] = {'repository': repository, 'config': deepcopy(config)}
+
+
 def reset_editors():
     st.session_state.pop('_watch_edit_bases', None)
     for key in list(st.session_state):
@@ -38,7 +42,9 @@ def edit_base(key, config):
 
 def save_watchlist(path, base, desired, *, hosted):
     if hosted:
-        result = CloudRepository(CloudSettings.from_environment()).save_watchlist(base['watchlist'], desired['watchlist'])
+        settings = CloudSettings.from_environment()
+        result = CloudRepository(settings).save_watchlist(base['watchlist'], desired['watchlist'])
+        remember_config(settings.repository, result['config'])
         cloud_config.clear()
         st.session_state['_reset_watch_editors'] = True
         return 'Watchlist saved to GitHub. Click Sync with GitHub on your local Dashboard to pull it.' if result['changed'] else 'No new changes. GitHub already has this watchlist.'

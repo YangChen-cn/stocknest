@@ -27,6 +27,7 @@ def save_trigger(path, current, desired, *, readonly, root):
             st.error(error_message(exc, language))
             return
         st.session_state['_report_settings_signature'] = None
+        ui_cloud.remember_config(ui_cloud.CloudSettings.from_environment().repository, result['config'])
         message = ("Schedule trigger saved to GitHub. Run Apply report schedules (same trigger) to confirm the external jobs."
                    if result["changed"] else "No new changes. GitHub already has this trigger.")
         st.success(translate(message, language))

@@ -5,6 +5,7 @@ from datetime import date, datetime, timezone
 from html import escape
 from functools import wraps
 from pathlib import Path
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -12,7 +13,7 @@ from pandas.io.formats.style import Styler
 import plotly.express as px
 import streamlit as st
 
-from stockwatch.ui_cloud import cloud_config, edit_base, editing_ready, reset_editors, save_watchlist as save_watchlist_edit
+from stockwatch.ui_cloud import cloud_config, edit_base, editing_ready, remember_config, reset_editors, save_watchlist as save_watchlist_edit
 from stockwatch.cloud_config import CloudConfigError, CloudSettings, configured as cloud_edit_configured
 from stockwatch.ui_reports import report_controls
 from stockwatch.ui_control import control_center as render_control_center, gmail_controls as render_gmail_controls
@@ -25,7 +26,9 @@ from stockwatch.control import (ControlError, trigger_workflow)
 from stockwatch.git_sync import SyncError, sync
 from stockwatch.i18n import LANGUAGES, data_status, error_message, language, t
 from stockwatch.notifications.email import configuration_status
-from stockwatch.providers.base import DataUnavailable, PERIODS
+from stockwatch.providers.base import DataUnavailable, PERIODS, Quote
+from stockwatch.providers.snapshot import SnapshotProvider
+from stockwatch.portfolio import positions
 from stockwatch.providers.cached import ClosedSessionProvider, clear_market_cache
 from stockwatch.providers.hosted import HostedProvider
 from stockwatch.providers.demo import DemoProvider
@@ -68,8 +71,8 @@ def ui_provider(demo):
     if demo:
         return DemoProvider()
     if cloud_readonly():
-        return HostedProvider(OpenBBProvider(timeout=30, attempts=1, lightweight=True), ROOT / "data/market_snapshot.json")
-    provider = OpenBBProvider()
+        return HostedProvider(OpenBBProvider(timeout=8, attempts=1, lightweight=True), ROOT / "data/market_snapshot.json")
+    provider = OpenBBProvider(timeout=8, attempts=1)
     if active_session() is None:
         return ClosedSessionProvider(provider, ROOT / ".cache/market", latest_session())
     return provider
@@ -173,7 +176,9 @@ def cached_instrument_quote(symbol, demo):
 @market_cache
 def cached_watchlist_snapshot(config, rows, as_of, demo):
     # Quotes already fetch a year's daily bars. Reuse this provider's range cache.
-    provider = ui_provider(demo)
+    provider = DemoProvider() if demo else HostedProvider(
+        OpenBBProvider(timeout=8, attempts=1, lightweight=cloud_readonly()),
+        ROOT / "data/market_snapshot.json", timeout_budget=15)
     portfolio, quotes = ui_snapshot(config, validate_transactions(rows), provider, as_of, demo)
     saved = portfolio.get("_market_snapshot") if portfolio.get("_snapshot_whole") else None
     end = date.fromisoformat(saved["history_session"]) if saved else DemoProvider().session if demo else latest_session()
@@ -189,12 +194,55 @@ def cached_watchlist_snapshot(config, rows, as_of, demo):
     return portfolio, quotes, histories
 
 
+def watchlist_view(config, transactions, as_of, demo, *, refresh=False):
+    """Keep edits independent of quote-cache expiry and watchlist configuration."""
+    key = f"_watchlist_prices_{demo}_{cloud_readonly()}"
+    loaded = st.session_state.get(key)
+    if refresh or loaded is None and demo:
+        _, quotes, histories = cached_watchlist_snapshot(config, [tx.row() for tx in transactions], as_of, demo)
+        if loaded is not None and not any(quote.price is not None and not quote.error for quote in quotes.values()):
+            st.info(text("Price refresh failed. Previous data is kept; editing and cloud saving remain available."))
+        else:
+            loaded = {"quotes": quotes, "histories": histories, "history_day": DemoProvider().session if demo else latest_session()}
+        st.session_state[key] = loaded
+    elif loaded is None:
+        quotes, histories = {}, {}
+        history_day = latest_session()
+        try:
+            provider = SnapshotProvider(ROOT / "data/market_snapshot.json")
+            # Future-dated snapshots never participate in this view.
+            if provider.session <= as_of:
+                history_day = provider.history_session
+                for symbol in set(config["watchlist"]) | set(positions(transactions, as_of)):
+                    quotes[symbol] = provider.get_quote(symbol, provider.session)
+                for symbol in config["watchlist"]:
+                    try:
+                        histories[symbol] = provider.get_history(symbol, "1M", history_day)
+                    except DataUnavailable:
+                        histories[symbol] = None
+        except DataUnavailable:
+            pass
+        loaded = {"quotes": quotes, "histories": histories, "history_day": history_day}
+        st.session_state[key] = loaded
+    symbols = set(config["watchlist"]) | set(positions(transactions, as_of))
+    quotes = {symbol: quote for symbol, quote in loaded["quotes"].items() if symbol in symbols}
+    current_quotes = {symbol: quote for symbol, quote in quotes.items() if quote.session == as_of}
+    # Current ledger classification remains correct even with old/missing prices.
+    # Stale quotes stay visible with their dates but never value today's portfolio.
+    provider = SimpleNamespace(get_quote=lambda symbol, session=None: current_quotes.get(symbol, Quote(symbol)))
+    portfolio, _ = snapshot(config, transactions, provider, as_of, closing=True)
+    return portfolio, quotes, loaded["histories"], loaded["history_day"]
+
+
 def symbol_picker(key: str, symbols: list[str], demo: bool) -> str | None:
     query = st.text_input(text("Stock name or ticker"), placeholder=text("e.g. Apple, Tesla, 苹果 or an ETF ticker"), max_chars=100, key=f"{key}_query")
     searched = st.button(text("Search stocks"), key=f"{key}_search_button")
-    st.caption(text("Enter a name and press Enter or leave the input to search. Search results replace the previous selection."))
+    st.caption(text("Click Search stocks to search, or enter a ticker manually without loading prices.") if key == "watch" else text("Enter a name and press Enter or leave the input to search. Search results replace the previous selection."))
     changed = query.strip() != st.session_state.get(f"{key}_last_query", "")
-    if searched or changed:
+    if changed and key == "watch" and not searched:
+        st.session_state[f"{key}_results"] = []
+        st.session_state[f"{key}_selection"] = None
+    if searched or changed and key != "watch":
         st.session_state[f"{key}_last_query"] = query.strip()
         st.session_state[f"{key}_manual"] = False
         try:
@@ -223,7 +271,7 @@ def symbol_picker(key: str, symbols: list[str], demo: bool) -> str | None:
             st.session_state[f"{key}_selection"] = None
         symbol = st.selectbox(text("Choose stock / ETF"), options, index=0 if key == "benchmark" and options else None,
                               format_func=labels.__getitem__, placeholder=text("Search above to see options"), key=f"{key}_selection")
-    if symbol and key != "benchmark":
+    if symbol and key not in ("benchmark", "watch"):
         with st.spinner(text("Loading selected stock…")):
             quote = cached_instrument_quote(symbol, demo)
         st.markdown(f"**{symbol}**")
@@ -429,7 +477,6 @@ def watchlist_page(path: Path, config: dict, quotes: dict, demo: bool, portfolio
                     updated = deepcopy(remove_base)
                     updated["watchlist"].pop(remove_symbol, None)
                     notice = save_watchlist_edit(path, remove_base, updated, hosted=cloud_readonly())
-                    cached_snapshot.clear()
                     st.session_state["_stockwatch_notice"] = notice
                     st.rerun()
                 except (ValidationError, OSError) as exc:
@@ -467,7 +514,6 @@ def watchlist_page(path: Path, config: dict, quotes: dict, demo: bool, portfolio
                         item["alerts"] = alerts
                     updated["watchlist"][symbol] = item
                     notice = save_watchlist_edit(path, base, updated, hosted=cloud_readonly())
-                    cached_snapshot.clear()
                     st.session_state["_stockwatch_notice"] = notice
                     st.rerun()
                 except (ValidationError, OSError) as exc:
@@ -517,7 +563,6 @@ def watchlist_page(path: Path, config: dict, quotes: dict, demo: bool, portfolio
                         entry["alerts"] = alerts
                     watchlist[symbol] = entry
                 st.session_state["_stockwatch_notice"] = save_watchlist_edit(path, bulk_base, {**bulk_base, "watchlist": watchlist}, hosted=cloud_readonly())
-                cached_snapshot.clear()
                 st.rerun()
             except (ValidationError, OSError) as exc:
                 st.error(localized_error(exc) if isinstance(exc, ValidationError) else text("Save failed; original file preserved."))
@@ -765,7 +810,8 @@ def main(app_name: str = "StockWatch"):
         header = st.columns([3, 1.25, 2], vertical_alignment="center")
     header[0].title(text(page))
     export_slot = header[2].container()
-    if header[1].button(text("Refresh market data")):
+    refresh_market = header[1].button(text("Refresh market data"))
+    if refresh_market:
         if not demo:
             try:
                 clear_market_cache(ROOT / ".cache/market")
@@ -784,6 +830,7 @@ def main(app_name: str = "StockWatch"):
     if cloud_readonly() and cloud_edit_configured():
         if st.sidebar.button(text("Reload cloud configuration (discard editor drafts)")):
             cloud_config.clear()
+            st.session_state.pop('_cloud_config_view', None)
             reset_editors()
     if notice := st.session_state.pop("_stockwatch_notice", None):
         st.success(text(notice))
@@ -796,7 +843,12 @@ def main(app_name: str = "StockWatch"):
         if cloud_readonly() and not demo and cloud_edit_configured():
             try:
                 settings = CloudSettings.from_environment()
-                config = cloud_config(settings.repository)
+                saved_config = st.session_state.get('_cloud_config_view')
+                if saved_config and saved_config['repository'] == settings.repository:
+                    config = deepcopy(saved_config['config'])
+                else:
+                    config = cloud_config(settings.repository)
+                    remember_config(settings.repository, config)
                 st.session_state['_cloud_edit_ready'] = True
             except CloudConfigError as exc:
                 st.warning(localized_error(exc))
@@ -822,13 +874,23 @@ def main(app_name: str = "StockWatch"):
         return
     as_of = DemoProvider().session if demo else current_price_session()
     if page == "Watchlist & Alerts":
-        with st.spinner(text("Loading portfolio…")):
-            portfolio, quotes, histories = cached_watchlist_snapshot(config, [tx.row() for tx in transactions], as_of, demo)
-        saved = portfolio.get("_market_snapshot") if portfolio.get("_snapshot_whole") else None
-        if saved:
-            as_of = date.fromisoformat(saved["session"])
-        chart_day = date.fromisoformat(saved["history_session"]) if saved else DemoProvider().session if demo else latest_session()
-        snapshot_caption(portfolio, quotes, as_of, demo)
+        if refresh_market:
+            with st.spinner(text("Refreshing prices (up to 15 seconds of online requests)…")):
+                portfolio, quotes, histories, chart_day = watchlist_view(config, transactions, as_of, demo, refresh=True)
+        else:
+            portfolio, quotes, histories, chart_day = watchlist_view(config, transactions, as_of, demo)
+        dates = sorted({quote.session for quote in quotes.values() if quote.price is not None and quote.session})
+        st.caption(text("Loaded price date: {date}. Editing does not refresh quotes. Use Refresh market data when needed.", date=str(dates[0]) if dates else "—"))
+        if not cloud_readonly():
+            if st.button(text("Sync with GitHub"), disabled=demo, key="watchlist_sync"):
+                try:
+                    with st.spinner(text("Syncing with GitHub…")):
+                        result = sync(ROOT)
+                    st.session_state["_reset_watch_editors"] = True
+                    st.session_state["_stockwatch_notice"] = result
+                    st.rerun()
+                except (SyncError, ValidationError) as exc:
+                    st.error(localized_error(exc))
         with export_slot:
             ai_export(config, transactions, portfolio, quotes, as_of, demo,
                       candidate_rows(config, {row["symbol"] for row in portfolio["holdings"]}, quotes, histories, chart_day), compact=True)
@@ -898,7 +960,6 @@ def main(app_name: str = "StockWatch"):
                         else:
                             item.pop("alerts", None)
                         notice = save_watchlist_edit(config_path, notes_base, updated, hosted=cloud_readonly())
-                        cached_snapshot.clear()
                         st.session_state["_stockwatch_notice"] = notice if cloud_readonly() else "Holding notes and alerts saved locally."
                         st.rerun()
                     except (ValidationError, OSError) as exc:

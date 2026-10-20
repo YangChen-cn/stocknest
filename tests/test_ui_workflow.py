@@ -214,9 +214,8 @@ def test_chinese_pages_empty_and_demo(app, page):
         assert app_test.metric[0].label == "持仓市值"
         assert "股票代码" in app_test.dataframe[0].value.columns
     if page == "Watchlist & Alerts":
-        candidates, owned = app_test.dataframe[0].value, app_test.dataframe[1].value
-        assert list(candidates["股票代码"]) == ["CAND"]
-        assert set(owned["股票代码"]) == {"CORE", "TECH", "VALUE"}
+        candidates = app_test.dataframe[0].value
+        assert all(list(frame.value["股票代码"]) == ["CAND"] for frame in app_test.dataframe)
         assert "近5日涨跌" in candidates.columns and "距候选目标价" in candidates.columns
         assert candidates.iloc[0]["候选状态"] == "等待价格"
 
@@ -646,6 +645,10 @@ def test_remove_watched_stock_preserves_other_entries_and_transactions(request, 
             return calculate({}, {}), {symbol: Quote(symbol, price=20, previous_close=19) for symbol in config["watchlist"]}
         snapshot.clear = lambda: None
         monkeypatch.setattr(ui, "cached_snapshot", snapshot)
+    def no_market_request(*args, **kwargs):
+        raise AssertionError("Editing must not request market data")
+    monkeypatch.setattr(ui, "cached_watchlist_snapshot", no_market_request)
+    monkeypatch.setattr(ui, "cached_instrument_quote", no_market_request)
     before_config = (root / "config.yaml").read_bytes()
     before_transactions = (root / "data/transactions.csv").read_bytes()
     original = deepcopy(remote["watchlist"] if hosted else load_config(root / "config.yaml")["watchlist"])
@@ -730,3 +733,26 @@ def test_cloud_auth_failure_falls_back_to_readonly(cloud_app):
     assert not app_test.exception and app_test.warning
     assert next(b for b in app_test.button if b.label == 'Save watchlist').disabled
     assert not writes
+
+
+def test_watchlist_view_uses_current_holdings_without_fetching_or_valuing_old_quotes(monkeypatch):
+    from datetime import date
+    from stockwatch import ui
+    from stockwatch.providers.base import Quote
+    from stockwatch.storage import validate_transactions
+    today = date(2026, 10, 7)
+    old = date(2026, 10, 6)
+    rows = validate_transactions([{"date": today.isoformat(), "symbol": "XYZ", "side": "BUY", "shares": "1", "price": "10"}])
+    session = {"_watchlist_prices_False_False": {"quotes": {"XYZ": Quote("XYZ", price=12, previous_close=11, session=old)}, "histories": {}, "history_day": old}}
+    monkeypatch.setattr(ui.st, "session_state", session)
+    monkeypatch.setattr(ui, "cloud_readonly", lambda: False)
+    def no_fetch(*args, **kwargs):
+        raise AssertionError("Unexpected network request")
+    monkeypatch.setattr(ui, "cached_watchlist_snapshot", no_fetch)
+    config = {"portfolio": {}, "watchlist": {"XYZ": {"thesis": "First"}}}
+    portfolio, quotes, _, day = ui.watchlist_view(config, rows, today, False)
+    assert portfolio["holdings"][0]["symbol"] == "XYZ"
+    assert portfolio["market_value"] is None and quotes["XYZ"].session == old and day == old
+    config["watchlist"].clear()
+    portfolio, _, _, _ = ui.watchlist_view(config, rows, today, False)
+    assert portfolio["holdings"][0]["symbol"] == "XYZ"

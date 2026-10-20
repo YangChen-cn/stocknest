@@ -1,5 +1,6 @@
 """Hosted UI: lightweight online Yahoo first, saved quotes only with matching dates."""
 import logging
+from time import monotonic
 
 from stockwatch.calendar import current_price_session
 from stockwatch.providers.base import DataUnavailable, Quote
@@ -9,17 +10,31 @@ logger = logging.getLogger(__name__)
 
 
 class HostedProvider:
-    def __init__(self, online, path):
+    def __init__(self, online, path, *, timeout_budget=None):
         self.online = online
         self.blocked = False
+        self.deadline = monotonic() + timeout_budget if timeout_budget is not None else None
         try:
             self.saved = SnapshotProvider(path)
         except DataUnavailable:
             self.saved = None
 
+    def _online_ready(self):
+        if self.deadline is not None:
+            remaining = self.deadline - monotonic()
+            if remaining <= 0:
+                self.blocked = True
+            elif hasattr(self.online, 'timeout'):
+                self.online.timeout = min(self.online.timeout, remaining)
+        return not self.blocked
+
+    def _history_failed(self, exc):
+        if any(code in str(exc).lower() for code in ('rate limited', 'timed out', 'worker killed')):
+            self.blocked = True
+
     def _quote(self, method, symbol, day, *args):
         quote = Quote(symbol, session=day, error='Data unavailable: online request blocked')
-        if not self.blocked:
+        if self._online_ready():
             quote = getattr(self.online, method)(symbol, day, *args)
             if quote.price is not None and not quote.error:
                 return quote
@@ -43,21 +58,21 @@ class HostedProvider:
         return self.online.search(query)
 
     def get_history_range(self, symbol, start, end):
-        if not self.blocked:
+        if self._online_ready():
             try:
                 return self.online.get_history_range(symbol, start, end)
-            except DataUnavailable:
-                pass
+            except DataUnavailable as exc:
+                self._history_failed(exc)
         if self.saved:
             return self.saved.get_history_range(symbol, start, end)
         raise DataUnavailable('Historical data unavailable online and in saved snapshot')
 
     def get_history(self, symbol, period, as_of=None):
-        if not self.blocked:
+        if self._online_ready():
             try:
                 return self.online.get_history(symbol, period, as_of)
-            except DataUnavailable:
-                pass
+            except DataUnavailable as exc:
+                self._history_failed(exc)
         if self.saved:
             return self.saved.get_history(symbol, period, as_of)
         raise DataUnavailable('Historical data unavailable online and in saved snapshot')
