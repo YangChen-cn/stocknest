@@ -10,9 +10,10 @@ logger = logging.getLogger(__name__)
 
 
 class HostedProvider:
-    def __init__(self, online, path, *, timeout_budget=None):
+    def __init__(self, online, path, *, timeout_budget=None, stop_on_timeout=True):
         self.online = online
         self.blocked = False
+        self.stop_on_timeout = stop_on_timeout
         self.deadline = monotonic() + timeout_budget if timeout_budget is not None else None
         try:
             self.saved = SnapshotProvider(path)
@@ -29,7 +30,8 @@ class HostedProvider:
         return not self.blocked
 
     def _history_failed(self, exc):
-        if any(code in str(exc).lower() for code in ('rate limited', 'timed out', 'worker killed')):
+        codes = ('rate limited', 'worker killed') + (('timed out',) if self.stop_on_timeout else ())
+        if any(code in str(exc).lower() for code in codes):
             self.blocked = True
 
     def _quote(self, method, symbol, day, *args):
@@ -38,8 +40,8 @@ class HostedProvider:
             quote = getattr(self.online, method)(symbol, day, *args)
             if quote.price is not None and not quote.error:
                 return quote
-            if quote.error and any(code in quote.error for code in ('rate limited', 'timed out', 'worker killed')):
-                self.blocked = True
+            if quote.error:
+                self._history_failed(quote.error)
         if self.saved is not None:
             saved = self.saved.get_quote(symbol, day)
             # Never substitute a different session or a forming bar for a close.

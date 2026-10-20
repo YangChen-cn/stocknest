@@ -173,3 +173,13 @@ def test_optional_refresh_budget_stops_further_online_calls(market, monkeypatch)
     assert provider.get_quote("XYZ", DAY) == q
     assert "saved snapshot" in provider.get_quote("XYZ", DAY).source
     assert provider.blocked and online.get_quote.call_count == 1
+
+
+def test_manual_refresh_continues_after_one_ticker_timeout_within_budget(market):
+    path, q, _ = market
+    online = Mock(timeout=60)
+    online.get_quote.side_effect = [Quote("SLOW", session=DAY, error="Data unavailable: Provider request timed out"), q]
+    provider = HostedProvider(online, path, timeout_budget=300, stop_on_timeout=False)
+    assert provider.get_quote("SLOW", DAY).price is None
+    assert not provider.blocked
+    assert provider.get_quote("XYZ", DAY) == q and online.get_quote.call_count == 2

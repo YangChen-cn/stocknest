@@ -6,6 +6,7 @@ from html import escape
 from functools import wraps
 from pathlib import Path
 from types import SimpleNamespace
+from time import monotonic
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -16,7 +17,7 @@ import streamlit as st
 from stockwatch.ui_cloud import cloud_config, edit_base, editing_ready, remember_config, reset_editors, save_watchlist as save_watchlist_edit
 from stockwatch.cloud_config import CloudConfigError, CloudSettings, configured as cloud_edit_configured
 from stockwatch.ui_reports import report_controls
-from stockwatch.ui_control import control_center as render_control_center, gmail_controls as render_gmail_controls
+from stockwatch.ui_control import control_center as render_control_center, gmail_controls as render_gmail_controls, automatic_sync_controls
 from stockwatch.imports.gmail import sync_hsbc
 from stockwatch.imports.hsbc import HSBCSyncError
 from stockwatch.calendar import current_price_session, latest_session, active_session
@@ -70,6 +71,11 @@ def cloud_readonly() -> bool:
 def ui_provider(demo):
     if demo:
         return DemoProvider()
+    deadline = st.session_state.get('_manual_market_deadline')
+    if deadline is not None:
+        return HostedProvider(OpenBBProvider(timeout=60, attempts=1, lightweight=cloud_readonly()),
+                              ROOT / "data/market_snapshot.json", timeout_budget=max(0, deadline - monotonic()),
+                              stop_on_timeout=False)
     if cloud_readonly():
         return HostedProvider(OpenBBProvider(timeout=8, attempts=1, lightweight=True), ROOT / "data/market_snapshot.json")
     provider = OpenBBProvider(timeout=8, attempts=1)
@@ -176,9 +182,12 @@ def cached_instrument_quote(symbol, demo):
 @market_cache
 def cached_watchlist_snapshot(config, rows, as_of, demo):
     # Quotes already fetch a year's daily bars. Reuse this provider's range cache.
+    deadline = st.session_state.get('_manual_market_deadline') or monotonic() + 300
     provider = DemoProvider() if demo else HostedProvider(
-        OpenBBProvider(timeout=8, attempts=1, lightweight=cloud_readonly()),
-        ROOT / "data/market_snapshot.json", timeout_budget=15)
+        OpenBBProvider(timeout=60, attempts=1, lightweight=cloud_readonly()),
+        ROOT / "data/market_snapshot.json",
+        timeout_budget=max(0, deadline - monotonic()),
+        stop_on_timeout=False)
     portfolio, quotes = ui_snapshot(config, validate_transactions(rows), provider, as_of, demo)
     saved = portfolio.get("_market_snapshot") if portfolio.get("_snapshot_whole") else None
     end = date.fromisoformat(saved["history_session"]) if saved else DemoProvider().session if demo else latest_session()
@@ -235,13 +244,16 @@ def watchlist_view(config, transactions, as_of, demo, *, refresh=False):
 
 
 def symbol_picker(key: str, symbols: list[str], demo: bool) -> str | None:
-    query = st.text_input(text("Stock name or ticker"), placeholder=text("e.g. Apple, Tesla, 苹果 or an ETF ticker"), max_chars=100, key=f"{key}_query")
-    searched = st.button(text("Search stocks"), key=f"{key}_search_button")
+    if key == "watch":
+        # Submit the query atomically; blur must not rerun and collapse results.
+        with st.form(f"{key}_search_form"):
+            query = st.text_input(text("Stock name or ticker"), placeholder=text("e.g. Apple, Tesla, 苹果 or an ETF ticker"), max_chars=100, key=f"{key}_query")
+            searched = st.form_submit_button(text("Search stocks"))
+    else:
+        query = st.text_input(text("Stock name or ticker"), placeholder=text("e.g. Apple, Tesla, 苹果 or an ETF ticker"), max_chars=100, key=f"{key}_query")
+        searched = st.button(text("Search stocks"), key=f"{key}_search_button")
     st.caption(text("Click Search stocks to search, or enter a ticker manually without loading prices.") if key == "watch" else text("Enter a name and press Enter or leave the input to search. Search results replace the previous selection."))
     changed = query.strip() != st.session_state.get(f"{key}_last_query", "")
-    if changed and key == "watch" and not searched:
-        st.session_state[f"{key}_results"] = []
-        st.session_state[f"{key}_selection"] = None
     if searched or changed and key != "watch":
         st.session_state[f"{key}_last_query"] = query.strip()
         st.session_state[f"{key}_manual"] = False
@@ -481,7 +493,8 @@ def watchlist_page(path: Path, config: dict, quotes: dict, demo: bool, portfolio
                     st.rerun()
                 except (ValidationError, OSError) as exc:
                     st.error(localized_error(exc) if isinstance(exc, ValidationError) else text("Save failed; original file preserved."))
-    with st.expander(text("Add or update a watched stock"), expanded=False):
+    with st.container(border=True):
+        st.subheader(text("Add or update a watched stock"))
         symbol = symbol_picker("watch", sorted(candidates), demo)
         if symbol in held:
             st.info(text("This stock is already held. Manage its notes and alerts on Holdings."))
@@ -669,6 +682,7 @@ def settings_page(path: Path, config: dict, demo: bool):
         except (SyncError, ValidationError) as exc:
             st.error(localized_error(exc))
     st.caption(text("This button uses your local Git login. Conflicting changes are preserved for manual resolution."))
+    automatic_sync_controls(ROOT, demo, cloud_readonly())
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -811,6 +825,7 @@ def main(app_name: str = "StockWatch"):
     header[0].title(text(page))
     export_slot = header[2].container()
     refresh_market = header[1].button(text("Refresh market data"))
+    st.session_state['_manual_market_deadline'] = monotonic() + 300 if refresh_market else None
     if refresh_market:
         if not demo:
             try:
@@ -875,7 +890,7 @@ def main(app_name: str = "StockWatch"):
     as_of = DemoProvider().session if demo else current_price_session()
     if page == "Watchlist & Alerts":
         if refresh_market:
-            with st.spinner(text("Refreshing prices (up to 15 seconds of online requests)…")):
+            with st.spinner(text("Refreshing prices manually (up to 5 minutes)…")):
                 portfolio, quotes, histories, chart_day = watchlist_view(config, transactions, as_of, demo, refresh=True)
         else:
             portfolio, quotes, histories, chart_day = watchlist_view(config, transactions, as_of, demo)
@@ -891,6 +906,7 @@ def main(app_name: str = "StockWatch"):
                     st.rerun()
                 except (SyncError, ValidationError) as exc:
                     st.error(localized_error(exc))
+            automatic_sync_controls(ROOT, demo, cloud_readonly())
         with export_slot:
             ai_export(config, transactions, portfolio, quotes, as_of, demo,
                       candidate_rows(config, {row["symbol"] for row in portfolio["holdings"]}, quotes, histories, chart_day), compact=True)

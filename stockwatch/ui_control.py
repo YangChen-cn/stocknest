@@ -1,5 +1,6 @@
 """Cloud, optional Gmail and macOS controls separated from portfolio widgets."""
 from datetime import datetime
+import platform
 from zoneinfo import ZoneInfo
 import streamlit as st
 
@@ -9,6 +10,7 @@ from stockwatch.git_sync import SyncError, sync
 from stockwatch.i18n import t, error_message
 from stockwatch.notifications.local import credentials, load_local, save_local, remove_local
 from stockwatch.storage import ValidationError
+from stockwatch import autosync
 
 
 def text(message, **values):
@@ -17,6 +19,32 @@ def text(message, **values):
 
 def localized_error(error):
     return error_message(error, st.session_state.get('_stockwatch_language', 'en'))
+
+
+def automatic_sync_controls(root, demo, readonly):
+    if readonly:
+        return
+    try:
+        state = autosync.status(root) if not demo else {'enabled': False}
+    except (SyncError, OSError):
+        state = {'enabled': False}
+    key, signature = f'autosync_toggle_{demo}', f'_autosync_signature_{demo}'
+    if key not in st.session_state or st.session_state.get(signature) != state['enabled']:
+        st.session_state[key] = state['enabled']
+        st.session_state[signature] = state['enabled']
+    enabled = st.toggle(text('Auto-sync after one hour'),
+                        disabled=demo or platform.system() != 'Darwin', key=key)
+    if enabled != state['enabled'] and not demo:
+        try:
+            autosync.set_enabled(root, enabled)
+            st.rerun()
+        except (ControlError, SyncError, OSError) as exc:
+            st.session_state.pop(signature, None)
+            st.error(localized_error(exc) if isinstance(exc, (ControlError, SyncError)) else text('Save failed; original file preserved.'))
+    if state['enabled'] or demo:
+        st.caption(text('Unsynced local edits are pushed after one hour, even with the browser closed. Failures keep changes and retry after five minutes.'))
+        if state.get('last_error'):
+            st.warning(text('Automatic sync could not finish. Local changes are preserved; check GitHub access or resolve Git conflicts.'))
 
 
 def gmail_controls(demo, ROOT, readonly=False):

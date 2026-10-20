@@ -2,6 +2,7 @@ import subprocess
 import pytest
 
 from stockwatch.git_sync import SyncError, sync
+from stockwatch.git_sync import sync_lock
 
 
 def git(path, *args):
@@ -102,3 +103,10 @@ def test_sync_pulls_cloud_watchlist_edit_alongside_local_transaction(repos):
     assert load_config(local / 'config.yaml')['watchlist']['NEW']['thesis'] == 'Cloud note'
     assert 'XYZ' in (local / 'data/transactions.csv').read_text()
     assert git(local, 'status', '--porcelain') == ''
+
+
+def test_manual_and_background_sync_cannot_overlap(repos):
+    local, _, _ = repos
+    with sync_lock(local):
+        with pytest.raises(SyncError, match="already running"):
+            sync(local)

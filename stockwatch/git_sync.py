@@ -1,5 +1,7 @@
 """Explicit user-initiated synchronization of configuration, transactions and import audit."""
 import subprocess
+import os
+from contextlib import contextmanager
 from pathlib import Path
 
 from stockwatch.control import ControlError, _command, repository, gh_path
@@ -26,7 +28,35 @@ def _git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProc
     return result
 
 
+@contextmanager
+def sync_lock(root: Path):
+    path = Path(_git(root, "rev-parse", "--git-path", "stockwatch-sync.lock").stdout.strip())
+    if not path.is_absolute():
+        path = root / path
+    with path.open("a+b") as stream:
+        try:
+            if os.name == 'nt':
+                import msvcrt
+                stream.seek(0)
+                if not stream.read(1):
+                    stream.write(b'0')
+                    stream.flush()
+                stream.seek(0)
+                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            raise SyncError("A GitHub sync is already running. Try again after it finishes.") from None
+        yield
+
+
 def sync(root: Path) -> str:
+    with sync_lock(root):
+        return _sync(root)
+
+
+def _sync(root: Path) -> str:
     load_config(root / "config.yaml")
     load_transactions(root / "data/transactions.csv")
     if (root / "data/hsbc_imports.json").exists():
@@ -55,7 +85,7 @@ def sync(root: Path) -> str:
     _git(root, "fetch", "origin", "main")
     if entries:
         _git(root, "add", "-f", "--", *sorted(path for path in EDITABLE if (root / path).exists()))
-        _git(root, "commit", "-m", "chore: update StockWatch portfolio configuration")
+        _git(root, "commit", "-m", "chore: update StockWatch portfolio configuration [skip ci]")
     result = _git(root, "rebase", "origin/main", check=False)
     if result.returncode:
         _git(root, "rebase", "--abort", check=False)

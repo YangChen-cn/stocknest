@@ -756,3 +756,29 @@ def test_watchlist_view_uses_current_holdings_without_fetching_or_valuing_old_qu
     config["watchlist"].clear()
     portfolio, _, _, _ = ui.watchlist_view(config, rows, today, False)
     assert portfolio["holdings"][0]["symbol"] == "XYZ"
+
+
+def test_watch_search_query_is_submitted_once_and_results_keep_the_selection(app, monkeypatch):
+    from stockwatch import ui
+    from stockwatch.portfolio import calculate
+    from stockwatch.providers.base import Instrument
+    calls = []
+    def search(query, demo):
+        calls.append(query)
+        return [Instrument("ONE", "Example One", "NASDAQ", "EQUITY"), Instrument("TWO", "Example Two", "NASDAQ", "EQUITY")]
+    monkeypatch.setattr(ui, "cached_search", search)
+    def snapshot(*args):
+        return calculate({}, {}), {}
+    snapshot.clear = lambda: None
+    monkeypatch.setattr(ui, "cached_snapshot", snapshot)
+    app_test, _ = app
+    app_test.run()
+    app_test.sidebar.radio[0].set_value("Watchlist & Alerts").run()
+    next(w for w in app_test.text_input if w.label == "Stock name or ticker").set_value("Example").run()
+    assert not calls
+    next(b for b in app_test.button if b.label == "Search stocks").click().run()
+    assert calls == ["Example"]
+    next(w for w in app_test.selectbox if w.label == "Choose stock / ETF").set_value("TWO").run()
+    assert not app_test.exception and calls == ["Example"]
+    assert next(w for w in app_test.selectbox if w.label == "Choose stock / ETF").value == "TWO"
+    assert not any(e.label == "Add or update a watched stock" for e in app_test.expander)
