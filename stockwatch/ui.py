@@ -416,6 +416,24 @@ def watchlist_page(path: Path, config: dict, quotes: dict, demo: bool, portfolio
         st.caption(text("Historical returns use completed sessions and exact anchors; 5D spans five trading intervals. Positive target distance means above buy_below."))
     else:
         st.info(text("Your candidate pool is empty. Add a stock below; no purchase is made."))
+    if candidates:
+        with st.container(border=True):
+            st.markdown(f"**{text('Remove a watched stock')}**")
+            remove_symbol = st.selectbox(text("Stock to remove"), sorted(candidates), index=None,
+                                         placeholder=text("Select a stock"), key=f"watch_remove_symbol_{demo}")
+            remove_base = edit_base(f"remove_watch_{remove_symbol}", config)
+            st.caption(text("Removes this stock's notes, targets and alerts. Transactions are not changed."))
+            remove = st.button(text("Remove from watchlist"), disabled=demo or (cloud_readonly() and not editing_ready()) or not remove_symbol)
+            if remove and remove_symbol in candidates:
+                try:
+                    updated = deepcopy(remove_base)
+                    updated["watchlist"].pop(remove_symbol, None)
+                    notice = save_watchlist_edit(path, remove_base, updated, hosted=cloud_readonly())
+                    cached_snapshot.clear()
+                    st.session_state["_stockwatch_notice"] = notice
+                    st.rerun()
+                except (ValidationError, OSError) as exc:
+                    st.error(localized_error(exc) if isinstance(exc, ValidationError) else text("Save failed; original file preserved."))
     with st.expander(text("Add or update a watched stock"), expanded=False):
         symbol = symbol_picker("watch", sorted(candidates), demo)
         if symbol in held:

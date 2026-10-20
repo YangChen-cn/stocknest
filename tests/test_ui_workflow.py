@@ -629,6 +629,39 @@ def cloud_app(app, monkeypatch):
     return *app, remote, writes, read
 
 
+
+@pytest.mark.parametrize("hosted", [False, True])
+def test_remove_watched_stock_preserves_other_entries_and_transactions(request, monkeypatch, hosted):
+    from copy import deepcopy
+    from stockwatch import ui
+    from stockwatch.portfolio import calculate
+    from stockwatch.providers.base import Quote
+    if hosted:
+        app_test, root, remote, writes, _ = request.getfixturevalue("cloud_app")
+        remote["watchlist"]["KEEP"] = {"thesis": "Preserve this note"}
+    else:
+        app_test, root = request.getfixturevalue("app")
+        save_config(root / "config.yaml", {"watchlist": {"XYZ": {"alerts": {"below": 9}}, "KEEP": {"thesis": "Preserve this note"}}})
+        def snapshot(config, rows, day, demo):
+            return calculate({}, {}), {symbol: Quote(symbol, price=20, previous_close=19) for symbol in config["watchlist"]}
+        snapshot.clear = lambda: None
+        monkeypatch.setattr(ui, "cached_snapshot", snapshot)
+    before_config = (root / "config.yaml").read_bytes()
+    before_transactions = (root / "data/transactions.csv").read_bytes()
+    original = deepcopy(remote["watchlist"] if hosted else load_config(root / "config.yaml")["watchlist"])
+    app_test.run()
+    app_test.sidebar.radio[0].set_value("Watchlist & Alerts").run()
+    button = next(b for b in app_test.button if b.label == "Remove from watchlist")
+    assert button.disabled
+    next(w for w in app_test.selectbox if w.label == "Stock to remove").set_value("XYZ").run()
+    next(b for b in app_test.button if b.label == "Remove from watchlist").click().run()
+    assert not app_test.exception
+    saved = remote["watchlist"] if hosted else load_config(root / "config.yaml")["watchlist"]
+    assert "XYZ" not in saved and saved["KEEP"] == original["KEEP"]
+    assert (root / "data/transactions.csv").read_bytes() == before_transactions
+    if hosted:
+        assert writes and (root / "config.yaml").read_bytes() == before_config
+
 def test_cloud_watchlist_saves_github_only_and_conflicts_preserve_draft(cloud_app):
     app_test, root, remote, writes, _ = cloud_app
     before = (root / 'config.yaml').read_bytes()

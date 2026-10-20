@@ -118,7 +118,7 @@ Deploy your **private** repo to [Streamlit's free hosting](https://share.streaml
 | AI-readable JSON | Every email carries a versioned JSON block + attachment; dashboard exports a live snapshot | [使用说明 · 用 GPT / Gmail 分析日报](使用说明.md) |
 | macOS login startup | Auto-start the local dashboard at login via launchd | [使用说明 · 本机 Gmail 与登录自启](使用说明.md) |
 
-The watchlist page and its bulk editor show only unheld candidates. Holding notes, targets and alerts are managed on Holdings; their settings are preserved when a stock moves out of the candidate view.
+The watchlist page and its bulk editor show only unheld candidates. Use the visible **Remove a watched stock** selector and **Remove from watchlist** button to remove a candidate and its notes, targets and alerts without changing transactions. Holding notes, targets and alerts are managed on Holdings; their settings are preserved when a stock moves out of the candidate view.
 
 ## A holding garden and seasonal letters
 
