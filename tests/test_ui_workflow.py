@@ -215,9 +215,15 @@ def test_chinese_pages_empty_and_demo(app, page):
         assert "股票代码" in app_test.dataframe[0].value.columns
     if page == "Watchlist & Alerts":
         candidates = app_test.dataframe[0].value
-        assert all(list(frame.value["股票代码"]) == ["CAND"] for frame in app_test.dataframe)
+        assert candidates["股票代码"].tolist() == ["CAND"]
+        # The editor translates labels via column_config, retaining stable data keys.
+        assert app_test.dataframe[1].value["Symbol"].tolist() == ["CAND"]
         assert "近5日涨跌" in candidates.columns and "距候选目标价" in candidates.columns
         assert candidates.iloc[0]["候选状态"] == "等待价格"
+        app_test.sidebar.toggle[0].set_value(False).run()
+        assert not app_test.exception
+        assert app_test.dataframe[0].value["Symbol"].empty
+        assert load_config(root / "config.yaml")["watchlist"] == {}
 
 
 def test_language_switch_persists_and_transaction_data_unchanged(app):

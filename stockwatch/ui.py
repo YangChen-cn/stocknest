@@ -818,6 +818,9 @@ def main(app_name: str = "StockWatch"):
     st.sidebar.title(app_name)
     st.sidebar.caption(text("See the changes. Keep the record."))
     demo = st.sidebar.toggle(text("Demo mode"), value=False)
+    if st.session_state.get('_editor_demo', demo) != demo:
+        reset_editors()
+    st.session_state['_editor_demo'] = demo
     page_labels = {value: text(value) for value in PAGES}
     page = st.sidebar.radio(text("Navigation"), PAGES, format_func=page_labels.__getitem__, key="navigation")
     with st.container(key="page_header"):
