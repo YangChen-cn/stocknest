@@ -53,7 +53,10 @@ def sync_lock(root: Path):
 
 def sync(root: Path) -> str:
     with sync_lock(root):
-        return _sync(root)
+        result = _sync(root)
+    from stockwatch.autosync import request
+    request(root)  # Cancel a pending timer after a successful manual push.
+    return result
 
 
 def _sync(root: Path) -> str:

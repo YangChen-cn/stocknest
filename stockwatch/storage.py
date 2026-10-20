@@ -133,6 +133,8 @@ def save_transactions(path: Path, rows: list[dict]) -> None:
     writer.writeheader()
     writer.writerows(tx.row() for tx in transactions)
     atomic_write(path, output.getvalue())
+    from stockwatch.autosync import request
+    request(path.parent.parent)
 
 
 def validate_config(raw: Any) -> dict:
@@ -218,6 +220,8 @@ def load_config(path: Path) -> dict:
 
 def save_config(path: Path, config: dict) -> None:
     atomic_write(path, yaml.safe_dump(validate_config(config), sort_keys=False, allow_unicode=True))
+    from stockwatch.autosync import request
+    request(path.parent)
 
 
 def validate_state(state: Any) -> dict:

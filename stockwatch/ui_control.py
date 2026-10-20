@@ -32,7 +32,7 @@ def automatic_sync_controls(root, demo, readonly):
     if key not in st.session_state or st.session_state.get(signature) != state['enabled']:
         st.session_state[key] = state['enabled']
         st.session_state[signature] = state['enabled']
-    enabled = st.toggle(text('Auto-sync after one hour'),
+    enabled = st.toggle(text('Auto-sync after ten minutes'),
                         disabled=demo or platform.system() != 'Darwin', key=key)
     if enabled != state['enabled'] and not demo:
         try:
@@ -42,7 +42,7 @@ def automatic_sync_controls(root, demo, readonly):
             st.session_state.pop(signature, None)
             st.error(localized_error(exc) if isinstance(exc, (ControlError, SyncError)) else text('Save failed; original file preserved.'))
     if state['enabled'] or demo:
-        st.caption(text('Unsynced local edits are pushed after one hour, even with the browser closed. Failures keep changes and retry after five minutes.'))
+        st.caption(text('Saving starts one ten-minute sync timer. No periodic checks when idle. Closing the browser does not stop it; failures keep changes and retry after five minutes.'))
         if state.get('last_error'):
             st.warning(text('Automatic sync could not finish. Local changes are preserved; check GitHub access or resolve Git conflicts.'))
 
