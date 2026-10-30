@@ -599,3 +599,14 @@ ZH.update({
     'ATR (14) smooths true range with Wilder alpha = 1/14. True range is max(high-low, abs(high-previous close), abs(low-previous close)). A new block starts with high-low and needs 14 complete bars. Units: USD, not percent.': 'ATR（14）用 Wilder α = 1/14 平滑真实波幅。真实波幅取当日高低差、最高价与前收差绝对值、最低价与前收差绝对值中的最大值；连续区段首日仅用高低差，需要14根完整日线。单位为美元，不是百分比。',
     'These are descriptive calculations for learning. This page does not generate trading decisions.': '这些指标用于学习和描述历史数据，本页不生成买卖判断。',
 })
+
+ZH.update({
+    'Quantitative market observations': '市场量化观察',
+    'Daily indicators through {date}; completed closes only, not intraday signals.': '日线指标截至 {date}，仅使用已完成收盘数据，不代表盘中信号。',
+    '{symbol} · {session}: close changed {value}% (rule threshold {threshold_pct}%).': '{symbol} · {session}：收盘变动 {value}%（异常波动规则阈值 {threshold_pct}%）。',
+    '{symbol} · {session}: close/SMA50 deviation crossed zero ({previous_value}% → {value}%).': '{symbol} · {session}：价格相对 SMA50 偏离率穿越零线（{previous_value}% → {value}%）。',
+    '{symbol} · {session}: MACD minus signal crossed zero ({previous_value} → {value} USD).': '{symbol} · {session}：MACD 与信号线差值变号（{previous_value} → {value} 美元）。',
+    '{symbol} · {session}: RSI crossed a 30/70 reference ({previous_value} → {value}).': '{symbol} · {session}：RSI 穿越30/70参照线（{previous_value} → {value}）。',
+    '{symbol} · {session}: portfolio weight {weight}% reaches the 40% concentration reference.': '{symbol} · {session}：持仓市值权重为 {weight}%，达到40%的集中度参照线。',
+    'No qualifying quantitative changes in the available data; missing history is not evidence of stable conditions.': '可用数据中没有达到规则阈值的量化变化；历史缺失不代表风险平稳。',
+})

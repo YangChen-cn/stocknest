@@ -171,3 +171,6 @@ python -m stockwatch.daily --demo --dry-run   # offline preview with synthetic d
 ## License
 
 [AGPL-3.0](LICENSE)
+
+
+Quantitative Daily Insights enriches daily report JSON with dated technical indicators, adjacent-session changes and portfolio concentration, plus up to three deterministic email observations. [Fields and rules / 字段与规则](docs/quantitative-insights.md).

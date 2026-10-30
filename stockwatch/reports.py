@@ -59,7 +59,7 @@ def intraday_watchlist_highlights(config, quotes, held, session):
 def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], config: dict,
                   alerts: list[Alert], *, demo: bool = False, mode: str = "CLOSE",
                   generated_at: datetime | None = None, performance: dict | None = None, watchlist_rows: list[dict] | None = None,
-                  garden: Garden | None = None) -> Report:
+                  garden: Garden | None = None, quantitative_analysis: dict | None = None) -> Report:
     report_session_key(mode)
     intraday = mode == "INTRADAY"
     generated_at = generated_at or datetime.now(timezone.utc)
@@ -228,6 +228,14 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
                   tr("Daily P/L adjusts for recorded buys, sells and fees; trade-day returns use daily timing assumptions.") if intraday else tr("Holdings-only performance excludes dividends and cash. Realized P/L uses average cost, not tax lots."),
                   tr("Sources: {sources}", sources=", ".join(sorted({tr(quote.source) for quote in quotes.values()})))])
 
+    footer_lines = lines[-3:]
+    quant_block = ""
+    if quantitative_analysis is not None:
+        from stockwatch.quantitative import observation_lines
+        quant_lines = observation_lines(quantitative_analysis, lang)
+        lines.extend(["", tr("Quantitative market observations"), *quant_lines])
+        quant_block = section(tr("Quantitative market observations"), list_rows(quant_lines))
+
     hero = email_hero(tr("Market Value"), m(portfolio["market_value"]), tr("Daily P/L"), m(portfolio["daily_pl"], signed=True),
                       right_color=value_color(portfolio["daily_pl"]), detail=p(portfolio["daily_pct"]))
     milestone_html = (f"<div aria-label='{escape(milestone_line)}' style='background:{SOFT};color:{GREEN};padding:12px 14px;border-radius:6px;margin:12px 0'>"
@@ -262,21 +270,21 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
     errors_block = (section(tr("Data availability"), f"<div style='background:#fce8e6;border-radius:8px;padding:2px 12px'>{list_rows(errors)}</div>")
                     if errors else "")
     footer = (f"<div style='font-size:11px;color:{NEUTRAL};line-height:1.75;margin:20px 0 0;padding-top:12px;border-top:1px solid {SOFT}'>"
-              + "".join(f"<p style='margin:6px 0;text-wrap:pretty'>{escape(line)}</p>" for line in lines[-3:]) + "</div>")
+              + "".join(f"<p style='margin:6px 0;text-wrap:pretty'>{escape(line)}</p>" for line in footer_lines) + "</div>")
     note = record_note(performance, lang)
     record_html = f"<p style='font-size:13px;color:{NEUTRAL}'>{escape(note)}</p>" if note else ""
     attachment_note = tr("JSON data is attached for your own analysis.")
     html = email_shell(heading, f"{session.isoformat()} · {timing}",
                        demo_banner + warning_banner + hero + milestone_html + summary_block
                        + record_html + holdings_block + performance_block + watch_html + alerts_block
-                       + notable_block + near_block + errors_block + footer
+                       + notable_block + near_block + quant_block + errors_block + footer
                        + f"<p style='font-size:13px;color:{NEUTRAL}'>{escape(attachment_note)}</p>" + garden_content.html, lang,
                        closing=quote_line, closing_html=reflection_html(session, lang))
     if garden_content.text:
         lines.extend(["", garden_content.text])
     lines.extend(["", quote_line, attachment_note])
     data = report_data(session, portfolio, quotes, config, alerts, mode=mode, generated_at=generated_at,
-                       demo=demo, performance=performance, watchlist_rows=watchlist_rows)
+                       demo=demo, performance=performance, watchlist_rows=watchlist_rows, quantitative_analysis=quantitative_analysis)
     if intraday:
         data["visible_watchlist_symbols"] = [quote.symbol for quote in highlights]
         data["watchlist_highlight_selection"] = "up to 3 unheld watched symbols reaching 5% absolute daily change, ranked by magnitude, ties by symbol"

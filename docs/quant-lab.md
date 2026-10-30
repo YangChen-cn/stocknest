@@ -9,7 +9,7 @@ A separate read-only workspace for exploring completed US equity / ETF daily bar
 3. Choose 5D / 1M / 3M / 6M / 1Y, moving averages, volume, Bollinger Bands and RSI / MACD / ATR panels. These switches only calculate and redraw the loaded data; they never fetch prices.
 4. Inspect **Daily bars and indicator values** for actual inputs, gaps and split ratios. The chart identifies its ticker, source, acquisition time, snapshot save time and available dates. Stale or missing data is labeled. A failed reload keeps the previous chart and its original metadata.
 
-Demo candles and volumes are deterministic, fictional and offline. Neither mode changes trades, notes, performance, alerts, report deduplication or scheduling. Online loading can update the existing local market cache. Technical results are never included in financial report JSON or email attachments.
+Demo candles and volumes are deterministic, fictional and offline. Neither mode changes trades, notes, performance, alerts, report deduplication or scheduling. Online loading can update the existing local market cache. Quant Lab itself does not change report data. Daily reports can independently include optional [Quantitative Daily Insights](quantitative-insights.md).
 
 ## Snapshot compatibility
 

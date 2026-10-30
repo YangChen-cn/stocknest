@@ -81,3 +81,19 @@ def watchlist_summary(config, portfolio, quotes, provider, session):
             histories[symbol] = None
             logger.warning("%s: watchlist history unavailable (%s)", symbol, type(exc).__name__)
     return candidate_rows(config, {row["symbol"] for row in portfolio["holdings"]}, quotes, histories, session)
+
+
+def quantitative_histories(config, portfolio, provider, session, mode):
+    """One range per instrument; provider reuses its quote/history request cache."""
+    from datetime import timedelta
+    cutoff = previous_session(session) if mode == 'INTRADAY' else session
+    symbols = {r['symbol'] for r in portfolio['holdings']} | set(config['watchlist']) | {config['portfolio'].get('benchmark', 'SPYM')}
+    histories = {}
+    for symbol in sorted(symbols):
+        try:
+            # Use the same 380-day lower bound as the existing quote requests.
+            histories[symbol] = provider.get_history_range(symbol, session - timedelta(days=380), cutoff)
+        except Exception as exc:
+            histories[symbol] = None
+            logger.warning('%s: quantitative history unavailable (%s)', symbol, type(exc).__name__)
+    return histories

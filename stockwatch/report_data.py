@@ -24,7 +24,7 @@ def numeric(value):
 
 
 def report_data(session, portfolio, quotes, config, alerts, *, mode, generated_at,
-                demo=False, performance=None, watchlist_rows=None):
+                demo=False, performance=None, watchlist_rows=None, quantitative_analysis=None):
     historical_day = previous_session(session) if mode == "INTRADAY" else session
     candidates = {row["Symbol"]: row for row in watchlist_rows or []}
     instruments = []
@@ -75,7 +75,7 @@ def report_data(session, portfolio, quotes, config, alerts, *, mode, generated_a
             "returns": {period: {key: numeric(value) for key, value in period_returns(performance, period).items()}
                         for period in (*PERIODS, "ALL")},
         }
-    return {
+    result = {
         "schema": "stockwatch.report", "schema_version": 1, "report_type": "portfolio",
         "report_id": f"{session}:{mode}", "session": session.isoformat(), "mode": mode,
         "generated_at": generated_at.astimezone(timezone.utc).isoformat(), "session_timezone": "America/New_York",
@@ -101,6 +101,10 @@ def report_data(session, portfolio, quotes, config, alerts, *, mode, generated_a
         "instruments": instruments, "performance": history,
         "new_alerts": [{"symbol": alert.symbol, "rule": alert.rule, "message": alert.message} for alert in alerts],
     }
+
+    if quantitative_analysis is not None:
+        result["quantitative_analysis"] = quantitative_analysis
+    return result
 
 
 def serialize_data(data):
