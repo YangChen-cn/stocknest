@@ -53,7 +53,7 @@ def test_watchlist_hides_holdings_and_bulk_delete_preserves_their_settings(app, 
     assert load_config(root / "config.yaml")["watchlist"] == {"XYZ": holding_settings}
 
 
-@pytest.mark.parametrize("page", ["Dashboard", "Performance", "Holdings", "Transactions", "Watchlist & Alerts", "Settings"])
+@pytest.mark.parametrize("page", ["Dashboard", "Performance", "Holdings", "Transactions", "Watchlist & Alerts", "Quant Lab", "Settings"])
 def test_all_pages_empty_and_demo(app, page):
     app_test, _ = app
     app_test.run()
@@ -199,7 +199,7 @@ def test_watchlist_editor_save_without_live_data(app):
     assert load_config(root / "config.yaml")["watchlist"]["XYZ"]["alerts"]["below"] == 90
 
 
-@pytest.mark.parametrize("page", ["Dashboard", "Performance", "Holdings", "Transactions", "Watchlist & Alerts", "Settings"])
+@pytest.mark.parametrize("page", ["Dashboard", "Performance", "Holdings", "Transactions", "Watchlist & Alerts", "Quant Lab", "Settings"])
 def test_chinese_pages_empty_and_demo(app, page):
     app_test, root = app
     save_config(root / "config.yaml", {"portfolio": {"base_currency": "USD", "language": "zh-CN"}, "watchlist": {}})

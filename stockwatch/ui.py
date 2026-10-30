@@ -17,6 +17,7 @@ import streamlit as st
 from stockwatch.ui_cloud import cloud_config, edit_base, editing_ready, remember_config, reset_editors, save_watchlist as save_watchlist_edit
 from stockwatch.cloud_config import CloudConfigError, CloudSettings, configured as cloud_edit_configured
 from stockwatch.ui_reports import report_controls
+from stockwatch.ui_quant import quant_lab_page
 from stockwatch.ui_control import control_center as render_control_center, gmail_controls as render_gmail_controls, automatic_sync_controls
 from stockwatch.imports.gmail import sync_hsbc
 from stockwatch.imports.hsbc import HSBCSyncError
@@ -45,7 +46,7 @@ from stockwatch.garden import build_garden
 from stockwatch.garden_render import garden_view
 from stockwatch.ui_style import apply_style, plot
 
-PAGES = ("Dashboard", "Performance", "Holdings", "Transactions", "Watchlist & Alerts", "Settings")
+PAGES = ("Dashboard", "Performance", "Holdings", "Transactions", "Watchlist & Alerts", "Quant Lab", "Settings")
 
 def text(message: str, **values) -> str:
     return t(message, st.session_state.get("_stockwatch_language", "en"), **values)
@@ -150,6 +151,31 @@ def cached_snapshot(config: dict, rows: list[dict], as_of, demo: bool):
 def cached_history(symbol: str, period: str, as_of, demo: bool):
     provider = ui_provider(demo)
     return provider.get_history(symbol, period, as_of)
+
+
+@market_cache
+def cached_quant_history(symbol, as_of, demo, saved_only):
+    from datetime import timedelta
+    from stockwatch.providers.bars import validate_bars
+    start = as_of - timedelta(days=380)
+    if saved_only and not demo:
+        frame = SnapshotProvider(ROOT / 'data/market_snapshot.json').get_history_range(symbol, start, as_of)
+    else:
+        provider = ui_provider(demo)
+        # Explicit load: keep local disk reuse while allowing a patient online request.
+        online = getattr(provider, 'online', getattr(provider, 'provider', provider))
+        if hasattr(online, 'timeout'):
+            online.timeout = 60
+        try:
+            frame = provider.get_history_range(symbol, start, as_of)
+        except DataUnavailable:
+            frame = SnapshotProvider(ROOT / 'data/market_snapshot.json').get_history_range(symbol, start, as_of)
+    result = validate_bars(frame)
+    result = result[result.date <= as_of].copy()
+    if result.empty:
+        raise DataUnavailable('No completed daily bars')
+    result.attrs.update(frame.attrs)
+    return result
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -840,6 +866,7 @@ def main(app_name: str = "StockWatch"):
         cached_watchlist_snapshot.clear()
         cached_snapshot.clear()
         cached_history.clear()
+        cached_quant_history.clear()
         if page == "Performance":
             cached_performance_preview.clear()
         # Instrument-name searches retain their separate cache.
@@ -889,6 +916,10 @@ def main(app_name: str = "StockWatch"):
     if page == "Performance":
         performance_page(config, transactions, demo)
         page_footer(DemoProvider().session if demo else latest_session())
+        return
+    if page == "Quant Lab":
+        as_of = DemoProvider().session if demo else latest_session()
+        quant_lab_page(config, transactions, demo, as_of, cached_quant_history, refresh=refresh_market)
         return
     as_of = DemoProvider().session if demo else current_price_session()
     if page == "Watchlist & Alerts":

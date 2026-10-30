@@ -559,3 +559,43 @@ class UserFacingError:
 
 def error_message(error: Exception, lang: str) -> str:
     return error.localized(lang) if isinstance(error, UserFacingError) else t(str(error), lang)
+
+# Read-only daily technical analysis; financial report keys stay unchanged.
+ZH.update({
+    'Quant Lab': '量化实验室',
+    'Completed daily bars · research workspace · no orders, alerts or report changes': '已完成的日线 · 学习与研究 · 不下单、不改变提醒或报告',
+    'Stock / ETF': '股票 / ETF', 'Or enter a ticker': '或直接填写代码',
+    'Daily bar source': '日线数据来源', 'Saved snapshot (offline)': '已保存快照（离线）',
+    'Online / local market cache': '在线行情 / 本地行情缓存', 'Load daily bars': '加载日线',
+    'Loading daily bars…': '正在加载日线…',
+    'Daily bars unavailable or invalid. Check the ticker or source; the previous chart, if any, is retained.': '日线不可用或校验失败，请核对代码或切换来源；若有已加载图表则予以保留。',
+    'Choose a ticker and load daily bars. Saved snapshots work offline; online loading is explicit. Indicator switches never fetch prices.': '选择或填写代码后加载日线。已保存快照可离线使用；在线查询需主动加载，切换指标不会重新获取行情。',
+    'Daily analysis: {symbol}': '日线分析：{symbol}',
+    'Market source: {source} · fetched: {time} · snapshot saved: {saved}': '行情来源：{source} · 获取时间：{time} · 快照保存时间：{saved}',
+    'Unknown': '未知',
+    'No usable completed daily bars for this ticker. No zero prices or synthetic candles are substituted.': '该股票没有可用的已完成日线；不会补零或构造 K 线。',
+    'Daily data: {start} — {end} · {count} closes · expected through {cutoff}': '日线区间：{start} 至 {end} · {count} 个收盘价 · 预期截至 {cutoff}',
+    'History is stale; the latest available bar is {date}. It is not today’s close.': '历史数据已过期，最新可用日线为 {date}，不是今日收盘价。',
+    '{count} trading sessions have missing closes. Gaps are not filled; indicators restart their warm-up.': '有 {count} 个交易日缺少收盘价。缺口不填充，指标将重新预热。',
+    'Provider prices are split-adjusted, without dividend adjustment. Split events remain visible in the data table.': '数据源价格按拆股调整，未作股息复权；拆股事件保留在数据表中。',
+    'Price adjustment is unknown or legacy. Corporate actions may affect indicator comparability; no adjustment is guessed.': '价格复权口径未知或来自旧快照。公司行动可能影响指标可比性，不推测或补做调整。',
+    'Analysis range': '分析时间范围', 'Moving averages': '均线', 'Indicator panels': '指标面板',
+    'Show volume': '显示成交量', 'Bollinger Bands (20, 2σ)': '布林带（20日，2σ）',
+    'No bars in the selected range. Choose a longer range or load newer data.': '所选区间没有日线，请扩大范围或加载更新的数据。',
+    'Some candles lack OHLC fields (including v1 snapshots). Incomplete candles are omitted; close-only history remains available in the table.': '部分日线缺少 OHLC 字段（例如 v1 快照）。不完整的 K 线不绘制，已有收盘价仍保留在数据表中；全部缺少 OHLC 时显示收盘折线。',
+    'Volume is missing for some sessions; the volume panel leaves those bars empty.': '部分交易日缺少成交量，对应的成交量柱保留为空。',
+    'Not enough consecutive history for: {indicators}. Warm-up values remain blank.': '连续历史不足，暂不可计算：{indicators}。预热区间保留为空。',
+    'Indicators use the full loaded prefix before the visible range. Only completed NYSE sessions count; missing sessions reset smoothers. Limited snapshot history can leave a long warm-up.': '指标先使用显示区间之前的全部已加载历史计算，再裁切图表。只计已完成的 NYSE 交易日，缺口会重置平滑；快照历史有限，长期指标可能需要较长预热。',
+    'Daily bars and indicator values': '日线与指标数值', 'How these indicators are calculated': '指标原理与计算口径',
+    'Daily candles': '日 K 线', 'Close only': '收盘价折线', 'Volume (shares)': '成交量（股）',
+    'MACD histogram': 'MACD 柱状差值', 'BB upper': '布林带上轨', 'BB lower': '布林带下轨', 'BB middle': '布林带中轨',
+    'Open': '开盘', 'High': '最高', 'Low': '最低', 'Close': '收盘',
+    'Volume': '成交量', 'Split_Ratio': '拆股比例',
+    'SMA averages N completed closes equally. The first value needs N consecutive observations.': 'SMA 将 N 个已完成的收盘价等权平均，需要 N 个连续观测后才有首值。',
+    'EMA weights recent closes more: alpha = 2/(N+1). Its first value is the SMA of N closes; a gap restarts the seed.': 'EMA 为近期价格赋予更大权重：α = 2/(N+1)。首值用 N 个收盘价的 SMA 初始化，遇缺口后重新初始化。',
+    'RSI (14) uses Wilder averages of gains and losses: alpha = 1/14, seeded by 14 price changes (15 closes). Rising-only = 100, falling-only = 0, flat = 50. The 30/70 lines are references, not trade signals.': 'RSI（14）使用 Wilder 涨跌额平滑：α = 1/14，以14次变动（15个收盘价）初始化。单边上涨为100，单边下跌为0，完全持平为50；30/70线仅供参照，不生成交易信号。',
+    'MACD = EMA(12) - EMA(26); signal = EMA(9) of MACD; histogram = MACD - signal. SMA-seeded EMAs need 26 closes for the line and 34 for the signal.': 'MACD = EMA(12) − EMA(26)；信号线是 MACD 的 EMA(9)，柱为两者之差。EMA 用 SMA 初始化，MACD 首值需要26个收盘价，信号线需要34个。',
+    'Bollinger Bands = SMA(20) plus/minus 2 population standard deviations (ddof=0). They describe historical dispersion, not forecast confidence intervals.': '布林带 = SMA(20) ± 2倍总体标准差（ddof=0）。它描述历史价格离散程度，不是预测置信区间。',
+    'ATR (14) smooths true range with Wilder alpha = 1/14. True range is max(high-low, abs(high-previous close), abs(low-previous close)). A new block starts with high-low and needs 14 complete bars. Units: USD, not percent.': 'ATR（14）用 Wilder α = 1/14 平滑真实波幅。真实波幅取当日高低差、最高价与前收差绝对值、最低价与前收差绝对值中的最大值；连续区段首日仅用高低差，需要14根完整日线。单位为美元，不是百分比。',
+    'These are descriptive calculations for learning. This page does not generate trading decisions.': '这些指标用于学习和描述历史数据，本页不生成买卖判断。',
+})

@@ -9,16 +9,18 @@ import pandas as pd
 
 from stockwatch.history import period_start
 from stockwatch.providers.base import DataUnavailable, PERIODS, Quote
+from stockwatch.providers.bars import BAR_COLUMNS, LEGACY_COLUMNS, validate_bars
 from stockwatch.storage import ticker
 
-BAR_COLUMNS = ['date', 'close', 'high', 'low', 'split_ratio']
 QUOTE_NUMBERS = ('price', 'previous_close', 'year_high', 'year_low')
 
 
 def load_snapshot(path: Path) -> dict:
     try:
-        data = json.loads(path.read_text(encoding='utf-8'))
-        if data['version'] != 1 or data['mode'] not in ('CLOSE', 'INTRADAY'):
+        def reject_constant(value):
+            raise ValueError('Non-finite JSON number')
+        data = json.loads(path.read_text(encoding='utf-8'), parse_constant=reject_constant)
+        if type(data['version']) is not int or data['version'] not in (1, 2) or data['mode'] not in ('CLOSE', 'INTRADAY'):
             raise ValueError
         day = date.fromisoformat(data['session'])
         cutoff = date.fromisoformat(data['history_session'])
@@ -42,18 +44,23 @@ def load_snapshot(path: Path) -> dict:
             for field in ('fetched_at', 'price_at'):
                 if q.get(field) is not None and datetime.fromisoformat(q[field]).tzinfo is None:
                     raise ValueError
-            previous = None
-            for bar in item['bars']:
-                if len(bar) != len(BAR_COLUMNS):
+            columns = LEGACY_COLUMNS if data['version'] == 1 else BAR_COLUMNS
+            if not isinstance(item['bars'], list) or any(not isinstance(bar, list) or len(bar) != len(columns) for bar in item['bars']):
+                raise ValueError
+            frame = validate_bars(pd.DataFrame(item['bars'], columns=columns))
+            if not frame.empty and frame.date.max() > cutoff:
+                raise ValueError
+            if data['version'] == 1 and frame.close.isna().any():
+                raise ValueError
+            if data['version'] == 2:
+                meta = item['history']
+                if set(meta) != {'source', 'fetched_at', 'adjustment', 'status'}:
                     raise ValueError
-                bar_day = date.fromisoformat(bar[0])
-                if bar_day > cutoff or previous is not None and bar_day <= previous:
+                if not isinstance(meta['source'], str) or meta['status'] not in ('complete', 'partial', 'unavailable'):
                     raise ValueError
-                previous = bar_day
-                for i, value in enumerate(bar[1:], 1):
-                    if value is not None and (not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0 or i <= 3 and value == 0):
-                        raise ValueError
-                if bar[1] is None:
+                if meta['adjustment'] not in ('split_adjusted_no_dividends', 'unknown'):
+                    raise ValueError
+                if meta['fetched_at'] is not None and datetime.fromisoformat(meta['fetched_at']).tzinfo is None:
                     raise ValueError
         return data
     except (OSError, ValueError, KeyError, TypeError, IndexError):
@@ -91,9 +98,14 @@ class SnapshotProvider:
         item = self.data['symbols'].get(symbol)
         if item is None or not item['bars']:
             raise DataUnavailable('Saved historical prices unavailable')
-        frame = pd.DataFrame(item['bars'], columns=BAR_COLUMNS)
-        frame['date'] = frame['date'].map(date.fromisoformat)
-        return frame[(frame.date >= start) & (frame.date <= end)].copy()
+        columns = LEGACY_COLUMNS if self.data['version'] == 1 else BAR_COLUMNS
+        frame = validate_bars(pd.DataFrame(item['bars'], columns=columns))
+        frame = frame[(frame.date >= start) & (frame.date <= end)].copy()
+        meta = item.get('history', {'source': item['quote']['source'], 'fetched_at': self.data['generated_at'],
+                                  'adjustment': 'unknown', 'status': 'legacy'})
+        frame.attrs.update(meta, snapshot_version=self.data['version'], saved=True,
+                           generated_at=self.data['generated_at'], history_session=self.data['history_session'])
+        return frame
 
     def get_history(self, symbol, period, as_of=None):
         if period not in PERIODS:

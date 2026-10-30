@@ -52,4 +52,12 @@ class DemoProvider:
             raise DataUnavailable("No demo fixture")
         prior = previous_session(self.session)
         prices = [quote.price if day == self.session else quote.previous_close * (1 + (day - prior).days / 5000) for day in sessions(start, end)]
-        return pd.DataFrame({"date": sessions(start, end), "close": prices, "split_ratio": 0.0})
+        frame = pd.DataFrame({"date": sessions(start, end), "close": prices, "split_ratio": 0.0})
+        # Entirely fictional candles, varying deterministically without a network.
+        frame['open'] = [p * (1 + ((i % 7) - 3) / 800) for i, p in enumerate(prices)]
+        frame['high'] = frame[['open', 'close']].max(axis=1) * 1.008
+        frame['low'] = frame[['open', 'close']].min(axis=1) * .992
+        frame['volume'] = [100000 + (i % 13) * 7000 for i in range(len(frame))]
+        frame.attrs.update(source='Simulated demo data', fetched_at='2026-10-06T20:00:00+00:00',
+                           adjustment='split_adjusted_no_dividends')
+        return frame

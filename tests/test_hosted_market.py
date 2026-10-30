@@ -92,7 +92,7 @@ def test_snapshot_whitelist_no_account_data(market):
     path, _, _ = market
     raw = json.loads(path.read_text())
     assert set(raw) == {'version', 'session', 'history_session', 'mode', 'generated_at', 'symbols'}
-    assert set(raw['symbols']['XYZ']) == {'quote', 'bars'}
+    assert set(raw['symbols']['XYZ']) == {'quote', 'bars', 'history'}
     assert 'note' not in path.read_text() and 'GMAIL' not in path.read_text()
 
 

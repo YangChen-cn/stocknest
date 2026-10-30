@@ -27,21 +27,25 @@ class ClosedSessionProvider:
         frame = None
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-            if payload["version"] == 1 and payload["session"] == self.session.isoformat():
+            if payload["version"] in (1, 2) and payload["session"] == self.session.isoformat():
                 candidate = normalize_history(payload["bars"])
                 if not quote_from_history(symbol, candidate, self.session).error:
                     frame = candidate
+                    frame.attrs.update(payload.get('history', {}), saved=True)
         except (OSError, ValueError, KeyError, TypeError, DataUnavailable):
             pass
         if frame is None:
             frame = self.provider.get_history_range(symbol, self.session - timedelta(days=380), self.session)
+            metadata = dict(frame.attrs)
             frame = normalize_history(frame.to_dict("records"))
+            frame.attrs.update(metadata)
             quote = quote_from_history(symbol, frame, self.session)
             if quote.error:
                 raise DataUnavailable(quote.error)
             # pandas serializes missing optional values as null, never NaN.
             bars = json.loads(frame.assign(date=frame.date.map(str)).to_json(orient="records"))
-            content = json.dumps({"version": 1, "session": self.session.isoformat(), "bars": bars}, allow_nan=False)
+            history = {key: frame.attrs.get(key) for key in ('source', 'fetched_at', 'adjustment')}
+            content = json.dumps({"version": 2, "session": self.session.isoformat(), "bars": bars, 'history': history}, allow_nan=False)
             try:
                 atomic_write(path, content + "\n")
             except OSError:
@@ -66,6 +70,12 @@ class ClosedSessionProvider:
         if start not in set(result.date) or day not in set(result.date):
             raise DataUnavailable("Historical endpoints missing or stale")
         return result
+
+    def get_history_range(self, symbol, start, end):
+        if start >= self.session - timedelta(days=380) and end <= self.session:
+            frame = self._frame(symbol)
+            return frame[(frame.date >= start) & (frame.date <= end)].copy()
+        return self.provider.get_history_range(symbol, start, end)
 
 
 def clear_market_cache(directory: Path):

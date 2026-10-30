@@ -19,6 +19,10 @@
 
 ---
 
+## Quant Lab
+
+A separate read-only daily candle workspace: OHLCV, volume, SMA/EMA, Wilder RSI/ATR, MACD and Bollinger Bands. Load saved snapshots offline or explicitly request online data; changing indicators does not fetch prices. Old v1 snapshots remain usable with honest missing-field fallbacks. [Usage, formulas and learning path](docs/quant-lab.md).
+
 ## What is this?
 
 StockNest keeps a factual daily record of your US stock & ETF portfolio:

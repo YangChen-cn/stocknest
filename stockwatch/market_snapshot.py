@@ -6,9 +6,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from stockwatch.calendar import latest_session, previous_session
+from stockwatch.history import sessions
 from stockwatch.portfolio import positions
 from stockwatch.providers.openbb_provider import OpenBBProvider
 from stockwatch.providers.snapshot import BAR_COLUMNS, QUOTE_NUMBERS, load_snapshot
+from stockwatch.providers.bars import validate_bars
 from stockwatch.storage import ROOT, atomic_write, load_config, load_transactions
 
 logger = logging.getLogger(__name__)
@@ -21,7 +23,7 @@ def save_snapshot(path, provider, quotes, session, mode, *, now=None):
         return False
     now = now or datetime.now(timezone.utc)
     cutoff = previous_session(session) if mode == 'INTRADAY' else session
-    data = dict(version=1, mode=mode, session=session.isoformat(), history_session=cutoff.isoformat(),
+    data = dict(version=2, mode=mode, session=session.isoformat(), history_session=cutoff.isoformat(),
                 generated_at=now.isoformat(), symbols={})
     for symbol, quote in sorted(quotes.items()):
         q = {name: getattr(quote, name) for name in QUOTE_NUMBERS}
@@ -34,16 +36,25 @@ def save_snapshot(path, provider, quotes, session, mode, *, now=None):
                  fetched_at=quote.fetched_at.isoformat() if quote.fetched_at else None,
                  price_at=quote.price_at.isoformat() if quote.price_at else None)
         bars = []
+        history = dict(source=q['source'], fetched_at=None, adjustment='unknown', status='unavailable')
         try:
-            frame = provider.get_history_range(symbol, session - timedelta(days=380), cutoff).copy()
-            for field in BAR_COLUMNS:
-                if field not in frame:
-                    frame[field] = None
+            loaded = provider.get_history_range(symbol, session - timedelta(days=380), cutoff)
+            frame = validate_bars(loaded)
+            if not frame.empty and frame.date.max() > cutoff:
+                raise ValueError('History after cutoff')
+            if not frame.empty:
+                complete = not frame[BAR_COLUMNS[1:6]].isna().any().any()
+                complete = complete and set(sessions(frame.date.min(), cutoff)).issubset(set(frame.date))
+                source = loaded.attrs.get('source')
+                history.update(source=source if source in ('OpenBB / yfinance', 'Yahoo / yfinance', 'Simulated demo data') else q['source'],
+                               fetched_at=loaded.attrs.get('fetched_at', now.isoformat()),
+                               adjustment='split_adjusted_no_dividends' if loaded.attrs.get('adjustment') == 'split_adjusted_no_dividends' else 'unknown',
+                               status='complete' if complete else 'partial')
             frame['date'] = frame['date'].map(str)
             bars = json.loads(frame[BAR_COLUMNS].to_json(orient='values'))
         except Exception as exc:
             logger.warning('%s: snapshot history unavailable (%s)', symbol, type(exc).__name__)
-        data['symbols'][symbol] = {'quote': q, 'bars': bars}
+        data['symbols'][symbol] = {'quote': q, 'bars': bars, 'history': history}
     content = json.dumps(data, allow_nan=False, separators=(',', ':')) + '\n'
     # Validate before replacing, including dates and finite prices.
     import tempfile

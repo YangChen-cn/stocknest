@@ -133,6 +133,8 @@ class OpenBBProvider:
                 if "error" in response:
                     raise DataUnavailable(provider_failure(response.get("error")))
                 history = normalize_history(response["history"])
+                history.attrs.update(source=self.source, fetched_at=datetime.now(timezone.utc).isoformat(),
+                                     adjustment='split_adjusted_no_dividends')
                 self._history_cache[(symbol, session - timedelta(days=380), session)] = history
                 return replace(quote_from_intraday(symbol, response["bars"], history, session, now), source=self.source)
             except (subprocess.TimeoutExpired, ValueError, IndexError, KeyError, TypeError, OSError, DataUnavailable) as exc:
@@ -181,6 +183,8 @@ class OpenBBProvider:
                 if "error" in response:
                     raise DataUnavailable(provider_failure(response["error"]))
                 frame = normalize_history(response["data"])
+                frame.attrs.update(source=self.source, fetched_at=datetime.now(timezone.utc).isoformat(),
+                                   adjustment='split_adjusted_no_dividends')
                 if required_session is not None and required_session not in set(frame.date):
                     partial = frame
                     logger.warning("%s: missing target session; expected=%s latest=%s attempt=%s/%s",
