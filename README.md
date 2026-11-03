@@ -177,3 +177,6 @@ Quantitative Daily Insights enriches daily report JSON with dated technical indi
 
 
 Quant Lab now defaults to a bilingual Beginner portfolio view, with Advanced charts retained. Daily emails show dated stage badges beside existing ticker names. [Stage rules and data quality](docs/interpretation.md).
+
+
+CI runs the complete offline suite with `--durations=15 --durations-min=0.2` so slow tests remain visible. UI navigation checks share one flow per language; workflow tests use isolated market fixtures, while dedicated provider/cache, garden rendering, accounting, alert and sync-failure tests keep their full behavior coverage.

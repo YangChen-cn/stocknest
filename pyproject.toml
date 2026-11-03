@@ -28,3 +28,4 @@ stockwatch = ["assets/garden/*.png", "assets/garden/*.md"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = ["real_garden: exercise actual botanical composition in the dedicated UI integration test"]

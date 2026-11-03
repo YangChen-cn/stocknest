@@ -45,7 +45,7 @@ jobs:
       - name: Check dependency compatibility
         run: python -m pip check
       - name: Run offline tests
-        run: python -m pytest
+        run: python -m pytest --durations=15 --durations-min=0.2
 
   runtime:
     runs-on: ubuntu-latest

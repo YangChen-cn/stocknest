@@ -82,6 +82,8 @@ def test_disabled_existing_job_is_patched_off_and_missing_not_created():
 def test_main_writes_trigger_only_after_successful_apply(tmp_path, monkeypatch):
     import sys
     import stockwatch.scheduler_sync as scheduler_sync
+    real_apply = scheduler_sync.apply
+    monkeypatch.setattr(scheduler_sync, "apply", lambda *args, **kw: real_apply(*args, **kw, sleeper=lambda _: None))
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump(PLANS, sort_keys=False), encoding="utf-8")
     # The first external switch needs the user-created template job; without it the

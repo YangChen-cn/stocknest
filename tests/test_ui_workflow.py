@@ -7,7 +7,7 @@ from stockwatch.i18n import t
 
 
 @pytest.fixture
-def app(tmp_path, monkeypatch):
+def app(tmp_path, monkeypatch, request):
     from stockwatch import ui
     (tmp_path / "data").mkdir()
     save_config(tmp_path / "config.yaml", {"portfolio": {"base_currency": "USD"}, "watchlist": {}})
@@ -18,6 +18,25 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setattr(ui, "cached_instrument_quote", lambda symbol, demo: Quote(symbol, price=20, previous_close=19, year_high=25, year_low=10))
     # Keep UI navigation offline; detailed provider reuse is checked by provider tests.
     monkeypatch.setattr(ui, "cached_watchlist_snapshot", lambda config, rows, day, demo: (*ui.cached_snapshot(config, rows, day, demo), {}))
+    from stockwatch.providers.base import DataUnavailable
+    from stockwatch.providers.demo import DemoProvider
+    class OfflineProvider:
+        def get_quote(self, symbol, session=None):
+            return Quote(symbol, session=session, error="Offline UI fixture: no quote")
+        def get_intraday_quote(self, symbol, session, now=None):
+            return self.get_quote(symbol, session)
+        def get_history(self, *args):
+            raise DataUnavailable("Offline UI fixture: no history")
+        get_history_range = get_history
+    monkeypatch.setattr(ui, "ui_provider", lambda demo: DemoProvider() if demo else OfflineProvider())
+    def unexpected_market_request(*args, **kwargs):
+        pytest.fail("UI workflow reached a real market provider; install an explicit fixture")
+    for method in ("_request", "search", "get_intraday_quote"):
+        monkeypatch.setattr(ui.OpenBBProvider, method, unexpected_market_request)
+    if not request.node.get_closest_marker("real_garden"):
+        # Workflow tests exercise interactions, not repeated PNG composition.
+        # The dedicated garden UI test below and test_garden.py render real assets.
+        monkeypatch.setattr(ui, "holding_garden", lambda *args: None)
     ui.cached_snapshot.clear()
     ui.cached_history.clear()
     return AppTest.from_file(str(ROOT / "app.py"), default_timeout=15), tmp_path
@@ -53,17 +72,47 @@ def test_watchlist_hides_holdings_and_bulk_delete_preserves_their_settings(app, 
     assert load_config(root / "config.yaml")["watchlist"] == {"XYZ": holding_settings}
 
 
-@pytest.mark.parametrize("page", ["Dashboard", "Performance", "Holdings", "Transactions", "Watchlist & Alerts", "Quant Lab", "Settings"])
-def test_all_pages_empty_and_demo(app, page):
-    app_test, _ = app
+@pytest.mark.parametrize("lang", ["en", "zh-CN"])
+def test_all_pages_empty_and_demo(app, lang):
+    """One navigation flow per language, retaining all page/state checks."""
+    import streamlit as st
+    from stockwatch.ui import PAGES
+    app_test, root = app
+    save_config(root / "config.yaml", {"portfolio": {"language": lang}, "watchlist": {}})
     app_test.run()
-    app_test.sidebar.radio[0].set_value(page).run()
-    assert not app_test.exception
-    app_test.sidebar.toggle[0].set_value(True).run()
-    assert not app_test.exception and "SIMULATED" in app_test.warning[0].value
-    if page == "Dashboard":
-        assert len(app_test.metric) == 5 and len(app_test.dataframe) == 2
+    assert st.get_option("client.toolbarMode") == "minimal"
+    for demo in (False, True):
+        if demo:
+            app_test.sidebar.toggle[0].set_value(True).run()
+        for page in PAGES:
+            if app_test.sidebar.radio[0].value != page:
+                app_test.sidebar.radio[0].set_value(page).run()
+            assert not app_test.exception, (lang, demo, page)
+            assert app_test.title[0].value == t(page, lang)
+            assert app_test.sidebar.toggle[0].label == t("Demo mode", lang)
+            if demo:
+                assert any(("模拟演示数据" if lang == "zh-CN" else "SIMULATED") in warning.value for warning in app_test.warning)
+            if page in ("Dashboard", "Watchlist & Alerts"):
+                assert app_test.get("download_button")[0].proto.label == t("Export current AI data (JSON)", lang)
+            if demo and page == "Dashboard":
+                assert len(app_test.metric) == 5 and len(app_test.dataframe) == 2
+                assert app_test.metric[0].label == t("Market Value", lang)
+                assert t("Symbol", lang) in app_test.dataframe[0].value.columns
+            if demo and page == "Watchlist & Alerts":
+                candidates = app_test.dataframe[0].value
+                assert candidates[t("Symbol", lang)].tolist() == ["CAND"]
+                assert app_test.dataframe[1].value["Symbol"].tolist() == ["CAND"]
+                assert {t("5D %", lang), t("Distance to Buy Below", lang)} <= set(candidates.columns)
+                assert candidates.iloc[0][t("Status", lang)] == t("waiting", lang)
+                # Switching back must not reuse Demo editor drafts in real data.
+                app_test.sidebar.toggle[0].set_value(False).run()
+                assert not app_test.exception
+                assert app_test.dataframe[0].value["Symbol"].empty
+                assert load_config(root / "config.yaml")["watchlist"] == {}
+                app_test.sidebar.toggle[0].set_value(True).run()
 
+
+@pytest.mark.real_garden
 
 def test_dashboard_garden_is_folded_and_demo_does_not_write_user_records(app):
     app_test, root = app
@@ -198,32 +247,6 @@ def test_watchlist_editor_save_without_live_data(app):
     assert not app_test.exception
     assert load_config(root / "config.yaml")["watchlist"]["XYZ"]["alerts"]["below"] == 90
 
-
-@pytest.mark.parametrize("page", ["Dashboard", "Performance", "Holdings", "Transactions", "Watchlist & Alerts", "Quant Lab", "Settings"])
-def test_chinese_pages_empty_and_demo(app, page):
-    app_test, root = app
-    save_config(root / "config.yaml", {"portfolio": {"base_currency": "USD", "language": "zh-CN"}, "watchlist": {}})
-    app_test.run()
-    app_test.sidebar.radio[0].set_value(page).run()
-    assert not app_test.exception
-    assert app_test.title[0].value == t(page, "zh-CN")
-    assert app_test.sidebar.toggle[0].label == "演示模式"
-    app_test.sidebar.toggle[0].set_value(True).run()
-    assert not app_test.exception and "模拟演示数据" in app_test.warning[0].value
-    if page == "Dashboard":
-        assert app_test.metric[0].label == "持仓市值"
-        assert "股票代码" in app_test.dataframe[0].value.columns
-    if page == "Watchlist & Alerts":
-        candidates = app_test.dataframe[0].value
-        assert candidates["股票代码"].tolist() == ["CAND"]
-        # The editor translates labels via column_config, retaining stable data keys.
-        assert app_test.dataframe[1].value["Symbol"].tolist() == ["CAND"]
-        assert "近5日涨跌" in candidates.columns and "距候选目标价" in candidates.columns
-        assert candidates.iloc[0]["候选状态"] == "等待价格"
-        app_test.sidebar.toggle[0].set_value(False).run()
-        assert not app_test.exception
-        assert app_test.dataframe[0].value["Symbol"].empty
-        assert load_config(root / "config.yaml")["watchlist"] == {}
 
 
 def test_language_switch_persists_and_transaction_data_unchanged(app):
@@ -432,15 +455,6 @@ def test_settings_has_no_stock_search_and_cloud_controls_are_grouped(app):
     assert next(w for w in app_test.text_input if w.label=="Benchmark ticker").value=="SPY"
 
 
-def test_dashboard_and_watchlist_offer_ai_download(app):
-    app_test, _ = app
-    app_test.run()
-    assert not app_test.exception
-    assert app_test.get("download_button")[0].proto.label == "Export current AI data (JSON)"
-    app_test.sidebar.radio[0].set_value("Watchlist & Alerts").run()
-    assert not app_test.exception
-    assert app_test.get("download_button")[0].proto.label == "Export current AI data (JSON)"
-
 
 def test_report_settings_save_and_demo_read_only(app):
     app_test, root = app
@@ -475,13 +489,6 @@ def test_report_settings_save_and_demo_read_only(app):
     assert next(button for button in app_test.button if button.label == "Save report schedules").disabled
     assert next(button for button in app_test.button if button.label == "Save schedule trigger").disabled
 
-
-def test_dashboard_hides_streamlit_developer_toolbar(app):
-    import streamlit as st
-    app_test, _ = app
-    app_test.run()
-    assert not app_test.exception
-    assert st.get_option("client.toolbarMode") == "minimal"
 
 
 def test_cloud_readonly_blocks_saving_but_keeps_views(app, monkeypatch):
