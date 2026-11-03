@@ -655,3 +655,5 @@ ZH.update({'Close {date}': '收盘 {date}', 'Distance SMA20': '距SMA20', 'Dista
  'ATR / price': 'ATR/价格', 'Annualized historical volatility': '年化历史波动率', 'Largest weight': '最大权重',
  'Top three weights': '前三大权重', 'Equivalent equal-weight count': '等权等效数量',
  'complete': '完整', 'partial': '部分可用', 'stale': '已过期', 'unavailable': '不可用'})
+
+ZH.update({'Expected daily cutoff: {date}. Each holding shows its actual date and quality.': '预期日线截止日：{date}。各持仓单独标明实际数据日期与质量。'})

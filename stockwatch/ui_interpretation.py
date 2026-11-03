@@ -59,7 +59,7 @@ def beginner_view(config, transactions, demo, as_of, loader, refresh=False):
         analysis['portfolio_concentration'] = dict(status='available', valuation_session=str(as_of), price_basis='closing_valuation',
             largest_weight_fraction=str(weights[0]), top_three_weight_fraction=str(sum(weights[:3])), hhi=str(sum(w*w for w in weights)))
     interpretations = interpret_analysis(analysis, lang)
-    st.caption(text('Daily indicators through {date}; completed closes only, not intraday signals.', date=str(as_of)))
+    st.caption(text('Expected daily cutoff: {date}. Each holding shows its actual date and quality.', date=str(as_of)))
     st.subheader(text('Portfolio exposure'))
     exposure = interpretations['exposure']
     st.write(exposure['label'])
