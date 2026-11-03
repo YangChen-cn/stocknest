@@ -26,6 +26,7 @@ def lab(tmp_path, monkeypatch):
     monkeypatch.setattr(ui, 'cached_snapshot', no_portfolio)
     app = AppTest.from_file(str(ROOT / 'app.py'), default_timeout=10)
     app.session_state['navigation'] = 'Quant Lab'
+    app.session_state['quant_view'] = 'Advanced'
     return app, tmp_path
 
 
@@ -93,3 +94,24 @@ def test_candles_and_optional_panels_preserve_missing_volume():
     volume = next(trace for trace in fig.data if trace.name == 'Volume (shares)')
     assert pd.isna(volume.y[5])
     assert any(trace.name == 'macd_signal' for trace in fig.data)
+
+
+def test_beginner_defaults_to_saved_holdings_and_keeps_advanced(lab, monkeypatch):
+    app, root = lab
+    app.session_state['quant_view'] = 'Beginner'
+    calls=[]
+    def load(symbol, day, demo, offline):
+        assert offline  # beginner rendering must never initiate an online request
+        calls.append(symbol)
+        return DemoProvider().get_history_range(symbol, date(2025, 10, 1), date(2026, 10, 6))
+    monkeypatch.setattr(ui, 'cached_quant_history', load)
+    app.run()
+    app.sidebar.toggle[0].set_value(True).run()
+    assert not app.exception
+    assert any(h.value == '组合集中度' for h in app.subheader)
+    assert any(h.value == 'CORE' for h in app.subheader)
+    count=len(calls)
+    next(r for r in app.radio if r.key=='quant_view').set_value('Advanced').run()
+    assert not app.exception and any(s.key=='quant_symbol' for s in app.selectbox)
+    next(r for r in app.radio if r.key=='quant_view').set_value('Beginner').run()
+    assert not app.exception and len(calls)==count

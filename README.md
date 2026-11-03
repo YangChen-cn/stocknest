@@ -173,4 +173,7 @@ python -m stockwatch.daily --demo --dry-run   # offline preview with synthetic d
 [AGPL-3.0](LICENSE)
 
 
-Quantitative Daily Insights enriches daily report JSON with dated technical indicators, adjacent-session changes and portfolio concentration, plus up to three deterministic email observations. [Fields and rules / 字段与规则](docs/quantitative-insights.md).
+Quantitative Daily Insights enriches daily report JSON with dated technical indicators, adjacent-session changes and portfolio concentration, compact inline email stage badges. [Fields and rules / 字段与规则](docs/quantitative-insights.md).
+
+
+Quant Lab now defaults to a bilingual Beginner portfolio view, with Advanced charts retained. Daily emails show dated stage badges beside existing ticker names. [Stage rules and data quality](docs/interpretation.md).

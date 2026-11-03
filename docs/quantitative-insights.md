@@ -18,7 +18,7 @@ Indicators reuse `stockwatch/technical.py`. Daily history requests use the same 
 
 Missing sessions restart warm-up; no interpolation or zero fill. Null H/L prevents ATR while valid closes can still support close-based indicators. A stale latest valid close retains its actual date and cannot generate daily-change events. Unknown price adjustment is flagged, and suppresses technical events. INTRADAY always uses daily bars through the previous completed session; its current portfolio weights are labeled separately as intraday valuation. It never treats the forming day's price as a daily close.
 
-## Deterministic observations
+## Deterministic observations (JSON facts)
 
 Events are descriptive facts with dates, values and thresholds, not recommendations:
 
@@ -27,7 +27,7 @@ Events are descriptive facts with dates, values and thresholds, not recommendati
 3. RSI crosses upward through 70 or downward through 30 (reference levels only).
 4. Largest holding weight >= 40%, a concentration observation rather than a new price-change event.
 
-Sort by the above priority, then prefer held instruments, then ticker and event kind. At most three appear in the email; all events and all instruments remain in JSON. No events means no qualifying changes **in available data**, not an assertion of low risk. These observations never evaluate or consume price-alert state.
+Sort by the above priority, then prefer held instruments, then ticker and event kind. The legacy selection of up to three events remains in JSON for compatibility. Visible email uses [inline stage badges](interpretation.md) on existing stock rows instead of a separate section; all events and all instruments remain in JSON. No events means no qualifying changes **in available data**, not an assertion of low risk. These observations never evaluate or consume price-alert state.
 
 Concentration includes per-holding market-value weights, largest/top-three weights and HHI (sum of squared fractional weights). It is unavailable if valuation is incomplete or empty. Daily ATR coverage and the weight of covered holdings with ATR/close >= 5% are reported with the coverage boundary; uncovered holdings are never treated as low risk. This is not a sector, correlation, portfolio volatility or VaR estimate.
 
@@ -36,3 +36,6 @@ Concentration includes per-holding market-value weights, largest/top-three weigh
 Prefer the JSON attachment. Check actual session, expected session, quality, metric reasons and coverage before using a number. Keep technical observations distinct from investment recommendations. External company news should be independently retrieved and linked, with publication/event dates, and joined by ticker; this application does not fetch or verify news. In intraday reports do not describe yesterday's RSI/MACD as a live intraday measurement. Missing data must remain unknown.
 
 Financial returns, the transaction ledger, performance history, report schedules, cloud editing permissions, email deduplication and delivery state are unchanged. Normal scheduled reports include the enrichment; validation does not send extra real email.
+
+
+Optional `quantitative_analysis.interpretation` now provides deterministic stages and exposure explanations. No existing numeric field or event rule is changed. See [boundaries and interface behavior](interpretation.md).

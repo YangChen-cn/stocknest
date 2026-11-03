@@ -74,6 +74,21 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
     def p(value, **options):
         return percent(value, lang=lang, **options)
 
+    from stockwatch.interpretation import compact_badges
+    from stockwatch.presentation import email_quant_badges
+    interpretations = ((quantitative_analysis or {}).get('interpretation') or {}).get('instruments') or {}
+    def stock_badges(symbol):
+        from stockwatch.calendar import previous_session
+        cutoff = previous_session(session) if intraday else session
+        if (quantitative_analysis or {}).get('expected_daily_session') != str(cutoff):
+            return []
+        return compact_badges(interpretations.get(symbol, {}), lang)
+    def badge_html(symbol):
+        return email_quant_badges(stock_badges(symbol), lang)
+    def badge_text(symbol):
+        badges = stock_badges(symbol)
+        return (' [' + str(badges[0]['session']) + ' · ' + ' / '.join(b['label'] for b in badges) + ']') if badges else ''
+
     section = email_section
 
     def list_rows(items: list[str]) -> str:
@@ -132,7 +147,7 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
     lines.extend(["", tr("Holdings")])
     holding_html = []
     for index, row in enumerate(portfolio["holdings"]):
-        lines.extend(["", row["symbol"], m(row["price"]), tr("Today {value}", value=p(row["daily_pct"]))])
+        lines.extend(["", row["symbol"] + badge_text(row["symbol"]), m(row["price"]), tr("Today {value}", value=p(row["daily_pct"]))])
         if not intraday:
             lines.extend([tr("Shares {shares} · Avg Cost {cost}", shares=row["shares"], cost=m(row["average_cost"])),
                           tr("Total {value}", value=p(row["return_pct"])), tr("Weight {value}", value=p(row["weight_pct"], signed=False))])
@@ -149,7 +164,7 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
         if intraday:
             stamp = quotes[row["symbol"]].price_at
             details.append((tr("Price time (New York)"), stamp.astimezone(NY).strftime('%H:%M %Z') if stamp else tr('Data unavailable'), NEUTRAL))
-        holding_html.append(email_holding(row['symbol'], m(row['price']), row['shares'], details, lang, thesis=thesis))
+        holding_html.append(email_holding(row['symbol'], m(row['price']), row['shares'], details, lang, thesis=thesis, badges=badge_html(row["symbol"])))
     if not portfolio["holdings"]:
         lines.append(tr("No current holdings."))
         holding_html.append(f"<p>{escape(tr('No current holdings.'))}</p>")
@@ -165,9 +180,9 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
             stamp = quote.price_at.astimezone(NY).strftime("%H:%M %Z") if quote.price_at else tr("Data unavailable")
             values = [quote.symbol, m(quote.price), p(quote.daily_move_pct), stamp]
             lines.append(tr("{symbol}: {price} · Today {daily} · Price time {time} New York",
-                            symbol=quote.symbol, price=values[1], daily=values[2], time=stamp))
+                            symbol=quote.symbol + badge_text(quote.symbol), price=values[1], daily=values[2], time=stamp))
             style = shade_style(index)
-            cells.append("<tr>" + f"<td style='{style}'><strong>{escape(values[0])}</strong></td>"
+            cells.append("<tr>" + f"<td style='{style}'><strong>{escape(values[0])}</strong>{badge_html(values[0])}</td>"
                          + f"<td style='{style}'>{escape(values[1])}</td>"
                          + f"<td style='{style};color:{value_color(quote.daily_move_pct)}'>{escape(values[2])}</td>"
                          + f"<td style='{style}'>{escape(values[3])}</td></tr>")
@@ -185,9 +200,9 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
         for index, row in enumerate(rows):
             values = [row["Symbol"], m(row["Current Price"]), p(row["Daily %"]), p(row["5D %"]), p(row["1M %"])]
             lines.append(tr("{symbol}: {price} · Today {daily} · 5D {five} · 1M {month}",
-                            symbol=values[0], price=values[1], daily=values[2], five=values[3], month=values[4]))
+                            symbol=values[0] + badge_text(values[0]), price=values[1], daily=values[2], five=values[3], month=values[4]))
             style = shade_style(index)
-            watch_cells.append("<tr>" + f"<td style='{style}'><strong>{escape(str(values[0]))}</strong></td>"
+            watch_cells.append("<tr>" + f"<td style='{style}'><strong>{escape(str(values[0]))}</strong>{badge_html(values[0])}</td>"
                                + f"<td style='{style}'>{escape(values[1])}</td>"
                                + f"<td style='{style};color:{value_color(row['Daily %'])}'>{escape(values[2])}</td>"
                                + f"<td style='{style};color:{value_color(row['5D %'])}'>{escape(values[3])}</td>"
@@ -229,13 +244,6 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
                   tr("Sources: {sources}", sources=", ".join(sorted({tr(quote.source) for quote in quotes.values()})))])
 
     footer_lines = lines[-3:]
-    quant_block = ""
-    if quantitative_analysis is not None:
-        from stockwatch.quantitative import observation_lines
-        quant_lines = observation_lines(quantitative_analysis, lang)
-        lines.extend(["", tr("Quantitative market observations"), *quant_lines])
-        quant_block = section(tr("Quantitative market observations"), list_rows(quant_lines))
-
     hero = email_hero(tr("Market Value"), m(portfolio["market_value"]), tr("Daily P/L"), m(portfolio["daily_pl"], signed=True),
                       right_color=value_color(portfolio["daily_pl"]), detail=p(portfolio["daily_pct"]))
     milestone_html = (f"<div aria-label='{escape(milestone_line)}' style='background:{SOFT};color:{GREEN};padding:12px 14px;border-radius:6px;margin:12px 0'>"
@@ -277,7 +285,7 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
     html = email_shell(heading, f"{session.isoformat()} · {timing}",
                        demo_banner + warning_banner + hero + milestone_html + summary_block
                        + record_html + holdings_block + performance_block + watch_html + alerts_block
-                       + notable_block + near_block + quant_block + errors_block + footer
+                       + notable_block + near_block + errors_block + footer
                        + f"<p style='font-size:13px;color:{NEUTRAL}'>{escape(attachment_note)}</p>" + garden_content.html, lang,
                        closing=quote_line, closing_html=reflection_html(session, lang))
     if garden_content.text:

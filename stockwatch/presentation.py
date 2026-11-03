@@ -103,7 +103,7 @@ def email_hero(left_label, left_value, right_label, right_value, *, right_color=
             f"<div class='mail-hero' style='font-family:{HEADING_FONT};font-size:28px;font-weight:600;line-height:1.25'>{atomic(right_value)}</div>{extra}</td></tr></table>")
 
 
-def email_holding(symbol, price, shares, details, lang, *, thesis="") -> str:
+def email_holding(symbol, price, shares, details, lang, *, thesis="", badges="") -> str:
     rows = []
     for index in range(0, len(details), 2):
         cells = []
@@ -117,7 +117,7 @@ def email_holding(symbol, price, shares, details, lang, *, thesis="") -> str:
             f"<div style='white-space:pre-wrap;overflow-wrap:break-word;text-wrap:pretty'>{escape(thesis)}</div></div>") if thesis else ""
     return (f"<div class='mail-holding' style='border:1px solid {BORDER};border-radius:8px;padding:14px 16px;margin:0 0 10px'>"
             f"<table role='presentation' style='width:100%;border-collapse:collapse'><tr>"
-            f"<td style='vertical-align:top;font-size:15px;font-weight:600'>{escape(symbol)}"
+            f"<td style='vertical-align:top;font-size:15px;font-weight:600'>{escape(symbol)}{badges}"
             f"<div style='font-size:11px;font-weight:400;color:{NEUTRAL};margin-top:4px'>{atomic(t('{shares} shares', lang, shares=shares))}</div></td>"
             f"<td style='text-align:right;vertical-align:top'><div style='font-size:11px;color:{NEUTRAL}'>{escape(t('Current Price', lang))}</div>"
             f"<div style='font-size:15px;font-weight:600;margin-top:4px'>{atomic(price)}</div></td></tr></table>"
@@ -152,6 +152,7 @@ def email_shell(title: str, subtitle: str, content: str, lang: str, *, closing: 
     return f'''<!doctype html><html lang="{lang}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 p{{text-wrap:pretty}}h1,h2,h3{{text-wrap:balance}}
+@media(max-width:600px){{.mail-quant-secondary{{display:none!important}}}}
 @media(max-width:480px){{.mail-body{{padding:22px 16px!important}}.mail-table td,.mail-table th{{padding:8px 4px!important}}.mail-table{{font-size:13px!important}}.mail-hero{{font-size:26px!important}}}}
 @media(max-width:380px){{.mail-hero-cell{{display:block!important;width:auto!important;text-align:left!important;padding:12px 0!important}}.mail-hero-right{{border-top:1px solid {BORDER}}}}}
 </style></head>
@@ -161,3 +162,19 @@ p{{text-wrap:pretty}}h1,h2,h3{{text-wrap:balance}}
 {brand}<h1 aria-label="{escape(title)}" style="font-family:{HEADING_FONT};font-size:27px;line-height:1.4;margin:0 0 10px;color:{INK};text-wrap:balance">{escape(display_title)}</h1>
 <p style="margin:0 0 24px;font-size:13px;line-height:1.75;color:{NEUTRAL};text-wrap:pretty">{subtitle_body}</p>
 {content}{footer}</div></td></tr></table></body></html>'''
+
+
+def email_quant_badges(badges, lang='en'):
+    colors = {'green': ('#eaf1eb', '#42634f'), 'red': ('#f5eae7', '#8d5752'),
+              'yellow': ('#f5f0df', '#796c41'), 'gray': ('#eef0ee', '#68756e')}
+    result = []
+    for badge in badges:
+        bg, fg = colors.get(badge['tone'], colors['gray'])
+        title = f"{badge['session']} · {badge['detail']}"
+        secondary = ' mail-quant-secondary' if badge['kind'] == 'macd' else ''
+        result.append(f"<span class='mail-quant-badge{secondary}' title='{escape(title, quote=True)}' "
+                      f"style='display:inline-block;vertical-align:middle;max-width:100%;box-sizing:border-box;margin:3px 3px 0 0;padding:2px 6px;"
+                      f"font-size:10px;font-weight:400;line-height:1.5;border-radius:9px;background:{bg};color:{fg};overflow-wrap:anywhere'>{escape(badge['label'])}</span>")
+    if result:
+        result.insert(0, f"<span style='font-size:10px;font-weight:400;color:{NEUTRAL};display:inline-block;margin:0 4px'>{escape(t('Close {date}', lang, date=badges[0]['session']))}</span>")
+    return ''.join(result)

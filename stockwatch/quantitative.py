@@ -133,7 +133,7 @@ def build_analysis(histories, portfolio, config, session, *, mode='CLOSE'):
     if weights and weights[0][1] >= .4:
         events.append(dict(kind='holding_concentration', symbol=weights[0][0], session=str(session), value=numeric(weights[0][1]), threshold_fraction='0.4', priority=4))
     events.sort(key=lambda e: (e['priority'], 'holding' not in e.get('roles', []), e['symbol'], e['kind']))
-    return dict(schema_version=1, expected_daily_session=str(cutoff), report_mode=mode,
+    result = dict(schema_version=1, expected_daily_session=str(cutoff), report_mode=mode,
         price_basis='previous_completed_session' if mode == 'INTRADAY' else 'completed_session',
         conventions=dict(volatility='sample standard deviation of 20 log returns, annualized sqrt(252); needs 21 consecutive closes',
                          smoothing='stockwatch.technical: SMA-seeded EMA; Wilder RSI and ATR; reset at missing sessions',
@@ -141,6 +141,9 @@ def build_analysis(histories, portfolio, config, session, *, mode='CLOSE'):
                          missing='null is unavailable, never zero; do not infer recommendations',
                          news='not fetched or verified by StockWatch; join external news by symbol and dated source'),
         instruments=items, portfolio_concentration=concentration, events=events, email_observations=events[:3])
+    from stockwatch.interpretation import interpret_analysis
+    result['interpretation'] = interpret_analysis(result, config['portfolio'].get('language', 'en'))
+    return result
 
 
 def observation_lines(analysis, lang):

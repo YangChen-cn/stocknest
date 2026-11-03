@@ -2,6 +2,8 @@
 
 A separate read-only workspace for exploring completed US equity / ETF daily bars. It uses the existing warm-paper UI, Plotly theme, market cache and English / 简体中文 catalog. No new dependencies or market providers are introduced.
 
+Default: the **Beginner** portfolio explanations. Switch to **Advanced** for the original workflow below. See [stage rules](interpretation.md).
+
 ## Load and explore
 
 1. Open **Quant Lab / 量化实验室**. Select a configured ticker or enter another US ticker directly. This does not add it to the watchlist or create a transaction.

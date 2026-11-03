@@ -123,7 +123,8 @@ def test_bilingual_email_and_json_share_identical_analysis():
     for lang, heading in [('en', 'Quantitative market observations'), ('zh-CN', '市场量化观察')]:
         config['portfolio']['language'] = lang
         report = render_report(provider.session, book, quotes, config, [], quantitative_analysis=analysis)
-        assert heading in report.text and heading in report.html
+        assert heading not in report.html
+        assert 'mail-quant-badge' in report.html
         assert json.loads(report.data_json)['quantitative_analysis'] == analysis
         assert report.data_json in report.text
 

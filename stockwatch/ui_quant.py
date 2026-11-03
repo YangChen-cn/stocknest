@@ -80,7 +80,12 @@ def technical_figure(frame, symbol, overlays, panels, *, volume=True, bands=Fals
 def quant_lab_page(config, transactions, demo, as_of, loader, *, refresh=False):
     lang = st.session_state.get('_stockwatch_language', 'en')
     text = lambda message, **values: t(message, lang, **values)
-    st.caption(text('Completed daily bars · research workspace · no orders, alerts or report changes'))
+    view = st.radio(text('Analysis view'), ['Beginner', 'Advanced'], format_func=lambda v: text(v), horizontal=True, key='quant_view')
+    if view == 'Beginner':
+        from stockwatch.ui_interpretation import beginner_view
+        beginner_view(config, transactions, demo, as_of, loader, refresh)
+        return
+    st.caption(text('Completed daily bars · decision support · no automated orders'))
     symbols = sorted({tx.symbol for tx in transactions} | set(config['watchlist']) |
                      {config['portfolio'].get('benchmark', 'SPYM')})
     with st.form('quant_request'):
