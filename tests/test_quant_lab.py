@@ -110,6 +110,8 @@ def test_beginner_defaults_to_saved_holdings_and_keeps_advanced(lab, monkeypatch
     assert not app.exception
     assert any(h.value == '组合集中度' for h in app.subheader)
     assert any(h.value == 'CORE' for h in app.subheader)
+    explanations = [e for e in app.expander if e.label == '解释与依据']
+    assert explanations and all(not e.proto.expanded for e in explanations)
     count=len(calls)
     next(r for r in app.radio if r.key=='quant_view').set_value('Advanced').run()
     assert not app.exception and any(s.key=='quant_symbol' for s in app.selectbox)

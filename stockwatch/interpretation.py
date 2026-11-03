@@ -116,6 +116,8 @@ def interpret_instrument(item, lang='en'):
             'This is not a predicted loss or a universal high/low risk classification.',
             'Compare subsequent values and the same instrument’s longer history; no percentile is available.')
         result[key]['comparison_quality'] = 'unavailable' if change is None else 'complete'
+    for kind, stage in result.items():
+        stage.update(plain_explanation(kind, stage['stage_id'], lang))
     return result
 
 
@@ -123,13 +125,15 @@ def interpret_concentration(concentration, lang='en'):
     concentration = concentration or {}
     hhi = number(concentration.get('hhi'))
     available = concentration.get('status') == 'available' and hhi is not None and 0 < hhi <= 1
-    return dict(stage_id='measured' if available else 'unavailable', label=t('Market-value exposure' if available else 'Data insufficient', lang),
+    result = dict(stage_id='measured' if available else 'unavailable', label=t('Market-value exposure' if available else 'Data insufficient', lang),
         session=concentration.get('valuation_session'), price_basis=concentration.get('price_basis'), quality='complete' if available else 'unavailable',
         values={key: concentration.get(key) if available else None for key in ('largest_weight_fraction', 'top_three_weight_fraction', 'hhi')} |
                {'effective_equal_weight_count': str(1 / hhi) if available else None}, thresholds={},
         reason=t('HHI sums squared market-value weights; 1/HHI is the equivalent equal-weight holding count.', lang),
         caveat=t('Equivalent count is not actual holding count. Market-value concentration does not measure sector, factor or constituent correlations.', lang),
         next_observation=t('Review dominant exposures alongside your thesis and verified company information; more tickers alone do not prove diversification.', lang))
+    result.update(plain_explanation('exposure', result['stage_id'], lang))
+    return result
 
 
 def interpret_analysis(analysis, lang='en'):
@@ -148,7 +152,11 @@ def compact_badges(stages, lang='en'):
         if stage.get('stage_id', 'unavailable') == 'unavailable' or stage.get('quality') != 'complete' or stage.get('session') != stage.get('expected_session'):
             continue
         values = stage['values']
-        label = t(stage.get('label_id', stage['label']), lang)
+        label_key = {
+            'trend': {'strong': 'Above averages', 'weak': 'Below averages', 'mixed': 'Mixed averages'},
+            'rsi': {'oversold': 'Falls forceful', 'overbought': 'Gains forceful', 'weak': 'Weak momentum', 'neutral': 'Neutral momentum', 'strong': 'Strong momentum'},
+        }.get(key, {}).get(stage['stage_id'], stage.get('label_id', stage['label']))
+        label = t(label_key, lang)
         if key == 'trend':
             label = 'Trend · ' + label
         elif key == 'rsi':
@@ -156,10 +164,69 @@ def compact_badges(stages, lang='en'):
         elif key == 'atr':
             ratio = Decimal(values['atr_price_ratio']) * 100
             arrow = {'rising': '↗', 'falling': '↘', 'steady': '→'}.get(stage['stage_id'], '')
-            label = f'ATR {ratio:.1f}% {arrow}'.strip()
+            label = t('Daily swing {value}% {arrow}', lang, value=f'{ratio:.1f}', arrow=arrow).strip()
         else:
             label = 'MACD · ' + label
         tone = 'green' if stage['stage_id'] in ('strong', 'positive_strengthening') else 'red' if stage['stage_id'] in ('weak', 'negative_strengthening') else 'yellow' if stage['stage_id'] in ('overbought', 'oversold', 'mixed') else 'gray'
         badges.append(dict(kind=key, label=label, tone=tone, session=stage['session'],
-                           detail=' · '.join([stage['reason'], stage['caveat']])))
+                           detail=' · '.join([stage['reason'], stage['caveat']]),
+                           explanation=plain_explanation(key, stage['stage_id'], lang)['plain_summary']))
     return badges
+
+
+DEFINITIONS = {
+    'trend': 'Moving-average alignment compares the close with the average closing prices of the past 20 and 50 sessions (SMA20/SMA50).',
+    'rsi': 'RSI compares recent upward and downward price pressure on a 0–100 scale. 30/70 are traditional references; 45/55 are product explanation partitions.',
+    'macd': 'MACD compares shorter- and longer-term price momentum. The difference from its signal line and its change describe momentum, not a trade instruction.',
+    'atr': 'ATR is the recent average true price range, including overnight gaps. ATR/price expresses this day-to-day swing size relative to price: 0.032 means about 3.2%.',
+    'volatility': 'Historical volatility annualizes how much past returns varied. It is neither a predicted return nor the percentage you are expected to lose.',
+    'exposure': 'Largest and top-three weights show how much portfolio value they occupy. HHI summarizes weight concentration; 1/HHI is an equivalent equal-weight count, not the actual number of holdings.',
+}
+PLAIN_STAGES = {
+    'trend': {
+        'strong': 'The close is above the 20-day average, which is above the 50-day average; this does not prove the trend will persist.',
+        'weak': 'The close is below the 20-day average, which is below the 50-day average; this does not confirm a lasting decline.',
+        'mixed': 'The close and two averages do not point in one consistent direction; this does not confirm a reversal.',
+    },
+    'rsi': {
+        'oversold': 'Recent declines have been forceful; oversold does not mean cheap or about to rebound.',
+        'overbought': 'Recent gains have been forceful; overbought does not mean expensive or about to fall.',
+        'weak': 'Recent downward pressure is stronger in this product partition; this is not a valuation judgement.',
+        'neutral': 'Recent upward and downward pressure is relatively balanced in this product partition; that does not mean low risk.',
+        'strong': 'Recent upward pressure is stronger in this product partition; that does not predict the next price move.',
+    },
+    'macd': {
+        'positive_strengthening': 'The positive MACD-to-signal gap widened: upward momentum strengthened, without guaranteeing further gains.',
+        'positive_weakening': 'The positive MACD-to-signal gap narrowed: upward momentum eased, without confirming a decline.',
+        'negative_strengthening': 'The negative MACD-to-signal gap widened: downward momentum strengthened, without making further falls certain.',
+        'negative_weakening': 'The negative MACD-to-signal gap moved toward zero: downward momentum eased, but has not turned positive.',
+        'positive_steady': 'MACD remains above its signal with an unchanged gap; that does not predict further gains.',
+        'negative_steady': 'MACD remains below its signal with an unchanged gap; that does not predict further declines.',
+        'positive_unknown': 'MACD is above its signal; comparable prior data is missing, so strengthening cannot be assessed.',
+        'negative_unknown': 'MACD is below its signal; comparable prior data is missing, so weakening cannot be assessed.',
+        'zero_steady': 'MACD equals its signal; this alone does not establish a price direction.',
+        'zero_unknown': 'MACD equals its signal; prior change is unknown and direction cannot be inferred.',
+    },
+    'atr': {
+        'rising': 'ATR/price rose: recent day-to-day swings widened.',
+        'falling': 'ATR/price fell: recent day-to-day swings narrowed.',
+        'steady': 'ATR/price was unchanged: recent day-to-day swing size was similar.',
+        'unknown': 'ATR/price describes recent day-to-day swing size; its change is unknown.',
+    },
+    'volatility': {
+        'rising': 'Past return fluctuations increased on an annualized measure; this is not a forecast loss percentage.',
+        'falling': 'Past return fluctuations decreased on an annualized measure; this does not guarantee future stability.',
+        'steady': 'Annualized past return variability was unchanged; this is not a return forecast.',
+        'unknown': 'Annualized past return variability is available, but its change cannot be compared; it is not a predicted loss.',
+    },
+    'exposure': {'measured': 'Large weights can dominate portfolio changes. An equivalent holding count does not reveal sector or correlation risk.'},
+}
+
+
+def plain_explanation(kind, stage_id, lang='en'):
+    """Translate an existing stage, never classify values or fill missing inputs."""
+    summary = PLAIN_STAGES.get(kind, {}).get(stage_id, 'Data is missing, stale or incomparable; no current state can be explained. Unknown does not mean low risk.')
+    text = t(summary, lang)
+    if kind == 'atr' and stage_id != 'unavailable':
+        text += ' ' + t('This swing-size percentage is not a future loss, loss probability or price-direction forecast.', lang)
+    return dict(definition=t(DEFINITIONS[kind], lang), plain_summary=text)

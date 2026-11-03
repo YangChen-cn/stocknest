@@ -64,9 +64,9 @@ def beginner_view(config, transactions, demo, as_of, loader, refresh=False):
     exposure = interpretations['exposure']
     st.write(exposure['label'])
     st.write(display_values(exposure['values'], text))
-    st.write(exposure['reason'])
-    st.caption(exposure['caveat'])
-    st.caption(exposure['next_observation'])
+    with st.expander(text('Explanation and basis')):
+        st.caption(exposure['definition'])
+        st.caption(exposure['caveat'])
     if not held:
         st.info(text('No current holdings. Select Advanced for individual stock analysis.'))
     for symbol in sorted(held):
@@ -78,16 +78,18 @@ def beginner_view(config, transactions, demo, as_of, loader, refresh=False):
             if thesis:
                 st.write(text('Thesis') + ': ' + thesis)
             stages = interpretations['instruments'][symbol]
-            for title, names in [('Trend', ('trend',)), ('Momentum', ('rsi', 'macd')), ('Volatility', ('atr', 'volatility'))]:
-                with st.expander(text(title), expanded=title == 'Trend'):
-                    for name in names:
-                        stage = stages[name]
-                        st.markdown('**' + stage['label'] + '**')
-                        st.write(display_values(stage['values'], text))
-                        st.write(stage['reason'])
-                        st.caption(stage['caveat'])
-                        st.caption(text('Next observation') + ': ' + stage['next_observation'])
-            st.caption(exposure['caveat'])
+            from stockwatch.interpretation import compact_badges
+            badges = compact_badges(stages, lang)
+            st.write(' · '.join(b['label'] for b in badges) or text('Data insufficient'))
+            with st.expander(text('Explanation and basis')):
+                for name, stage in stages.items():
+                    st.markdown('**' + stage['label'] + '**')
+                    st.caption(stage['definition'])
+                    st.write(display_values(stage['values'], text))
+                    st.write(stage['plain_summary'])
+                    st.caption(stage['reason'])
+                    st.caption(stage['caveat'])
+                    st.caption(text('Next observation') + ': ' + stage['next_observation'])
             weight = next((r['weight_pct'] for r in book['holdings'] if r['symbol'] == symbol), None)
             st.caption(text('Exposure') + ': ' + (f'{weight:.1f}%' if weight is not None else '—'))
     changed = {e['symbol'] for e in analysis['events'] if e.get('symbol') not in held}
@@ -95,5 +97,4 @@ def beginner_view(config, transactions, demo, as_of, loader, refresh=False):
         with st.expander(text('Changed watchlist stock: {symbol}', symbol=symbol)):
             for stage in interpretations['instruments'][symbol].values():
                 st.write(stage['label'])
-                st.caption(stage['reason'])
-    st.caption(text('Facts and technical observations only. Review weights, your thesis and verified news together; no combined buy/sell score is generated.'))
+                st.caption(stage['plain_summary'])

@@ -657,3 +657,54 @@ ZH.update({'Close {date}': '收盘 {date}', 'Distance SMA20': '距SMA20', 'Dista
  'complete': '完整', 'partial': '部分可用', 'stale': '已过期', 'unavailable': '不可用'})
 
 ZH.update({'Expected daily cutoff: {date}. Each holding shows its actual date and quality.': '预期日线截止日：{date}。各持仓单独标明实际数据日期与质量。'})
+
+# Plain-language explanations share the same deterministic stage IDs as Advanced.
+ZH.update({
+ 'Moving-average alignment compares the close with the average closing prices of the past 20 and 50 sessions (SMA20/SMA50).': '均线排列：比较当前收盘价、过去20个交易日均价（SMA20）和50个交易日均价（SMA50）的高低顺序。',
+ 'RSI compares recent upward and downward price pressure on a 0–100 scale. 30/70 are traditional references; 45/55 are product explanation partitions.': 'RSI用0–100衡量近期上涨与下跌力度。30/70是传统参考线，45/55是本产品的辅助解释分区，含义不同。',
+ 'MACD compares shorter- and longer-term price momentum. The difference from its signal line and its change describe momentum, not a trade instruction.': 'MACD比较较短期与较长期的价格动量；与信号线的差值及其变化用于描述力度，不是交易指令。',
+ 'ATR is the recent average true price range, including overnight gaps. ATR/price expresses this day-to-day swing size relative to price: 0.032 means about 3.2%.': 'ATR是近期平均真实波幅，包含隔夜跳空。ATR/股价表示日常上下波动幅度相对股价的比例，例如0.032约为3.2%。',
+ 'Historical volatility annualizes how much past returns varied. It is neither a predicted return nor the percentage you are expected to lose.': '历史波动率：把过去收益率的波动程度换算为年化统计值，不是未来收益预测，也不是预期亏损百分比。',
+ 'Largest and top-three weights show how much portfolio value they occupy. HHI summarizes weight concentration; 1/HHI is an equivalent equal-weight count, not the actual number of holdings.': '最大及前三大权重表示它们占组合市值的份额。HHI概括权重集中程度；1/HHI是等权持仓数量等效值，不是实际持仓数。',
+ 'The close is above the 20-day average, which is above the 50-day average; this does not prove the trend will persist.': '收盘价高于20日均价，20日均价又高于50日均价，近期价格高于短中期平均水平；不证明趋势会持续。',
+ 'The close is below the 20-day average, which is below the 50-day average; this does not confirm a lasting decline.': '收盘价低于20日均价，20日均价又低于50日均价，近期价格低于短中期平均水平；不确认下跌会持续。',
+ 'The close and two averages do not point in one consistent direction; this does not confirm a reversal.': '收盘价与两条均价没有形成一致方向，短期和中期表现混合；不能据此确认反转。',
+ 'Recent declines have been forceful; oversold does not mean cheap or about to rebound.': 'RSI超卖参考区：近期跌得较急，不代表股票便宜或马上反弹。',
+ 'Recent gains have been forceful; overbought does not mean expensive or about to fall.': 'RSI超买参考区：近期涨得较急，不代表估值过高或马上下跌。',
+ 'Recent downward pressure is stronger in this product partition; this is not a valuation judgement.': 'RSI产品辅助分区显示近期下跌力度偏强，不是估值判断。',
+ 'Recent upward and downward pressure is relatively balanced in this product partition; that does not mean low risk.': 'RSI产品辅助分区显示近期涨跌力度相对均衡，不代表风险低。',
+ 'Recent upward pressure is stronger in this product partition; that does not predict the next price move.': 'RSI产品辅助分区显示近期上涨力度偏强，不预测下一步涨跌。',
+ 'The positive MACD-to-signal gap widened: upward momentum strengthened, without guaranteeing further gains.': 'MACD正差值扩大：上涨动量增强，但不保证继续上涨。',
+ 'The positive MACD-to-signal gap narrowed: upward momentum eased, without confirming a decline.': 'MACD正差值缩小：上涨动量减弱，但不确认价格将下跌。',
+ 'The negative MACD-to-signal gap widened: downward momentum strengthened, without making further falls certain.': 'MACD负差值扩大：下跌动量增强，但不代表必然继续下跌。',
+ 'The negative MACD-to-signal gap moved toward zero: downward momentum eased, but has not turned positive.': 'MACD负差值向零靠近：下跌动量减弱，但差值仍未转正，不等于已转为上涨。',
+ 'MACD remains above its signal with an unchanged gap; that does not predict further gains.': 'MACD仍高于信号线、差值持平，不预测后续上涨。',
+ 'MACD remains below its signal with an unchanged gap; that does not predict further declines.': 'MACD仍低于信号线、差值持平，不预测后续下跌。',
+ 'MACD is above its signal; comparable prior data is missing, so strengthening cannot be assessed.': 'MACD高于信号线，但缺少可比较的前一交易日数据，不能判断动量是否增强。',
+ 'MACD is below its signal; comparable prior data is missing, so weakening cannot be assessed.': 'MACD低于信号线，但缺少可比较的前一交易日数据，不能判断动量是否减弱。',
+ 'MACD equals its signal; this alone does not establish a price direction.': 'MACD等于信号线，单凭这一点不能判断价格方向。',
+ 'MACD equals its signal; prior change is unknown and direction cannot be inferred.': 'MACD等于信号线，前期变化未知，不能推断价格方向。',
+ 'ATR relative to price increased: recent day-to-day swings widened, not a prediction that price will fall.': 'ATR相对股价上升：近期日常波动幅度扩大，不表示价格必然下跌。',
+ 'ATR relative to price decreased: recent day-to-day swings narrowed, not a guarantee of safety.': 'ATR相对股价下降：近期日常波动幅度收窄，不保证未来安全。',
+ 'ATR relative to price was unchanged: a recent swing-size measure, not an expected loss or probability.': 'ATR相对股价持平：它描述近期波幅尺度，不是预期跌幅或亏损概率。',
+ 'ATR relative to price describes recent swing size; its change is unknown, not a forecast loss or probability.': 'ATR相对股价描述近期日常波幅，变化尚不可比；不是预期跌幅或亏损概率。',
+ 'Past return fluctuations increased on an annualized measure; this is not a forecast loss percentage.': '年化历史波动率上升：过去收益率起伏扩大，不是未来预期亏损百分比。',
+ 'Past return fluctuations decreased on an annualized measure; this does not guarantee future stability.': '年化历史波动率下降：过去收益率起伏收窄，不保证未来稳定。',
+ 'Annualized past return variability was unchanged; this is not a return forecast.': '年化历史波动程度持平，不是未来收益预测。',
+ 'Annualized past return variability is available, but its change cannot be compared; it is not a predicted loss.': '可确认年化历史波动程度，但变化不可比；它不是预期亏损。',
+ 'Large weights can dominate portfolio changes. An equivalent holding count does not reveal sector or correlation risk.': '较大的持仓权重可能主导组合变化；等权等效数量不能揭示行业或相关性风险。',
+ 'Data is missing, stale or incomparable; no current state can be explained. Unknown does not mean low risk.': '数据缺失、过期或不可比较，不能解释当前阶段；未知不等于低风险。',
+})
+
+ZH.update({'This swing-size percentage is not a future loss, loss probability or price-direction forecast.': '这个波幅百分比不是未来预期跌幅、亏损概率或方向预测。'})
+
+ZH.update({
+ 'ATR/price rose: recent day-to-day swings widened.': 'ATR相对股价上升：近期日常波幅扩大。',
+ 'ATR/price fell: recent day-to-day swings narrowed.': 'ATR相对股价下降：近期日常波幅收窄。',
+ 'ATR/price was unchanged: recent day-to-day swing size was similar.': 'ATR相对股价持平：近期日常波幅相近。',
+ 'ATR/price describes recent day-to-day swing size; its change is unknown.': 'ATR相对股价描述近期日常波幅，变化尚不可比。',
+})
+
+ZH.update({'Above averages': '高于均价', 'Below averages': '低于均价', 'Mixed averages': '均价交错',
+ 'Falls forceful': '近期跌得急', 'Gains forceful': '近期涨得急', 'Daily swing {value}% {arrow}': '日常波幅 {value}% {arrow}',
+ 'Explanation and basis': '解释与依据'})

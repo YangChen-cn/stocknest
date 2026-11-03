@@ -152,7 +152,6 @@ def email_shell(title: str, subtitle: str, content: str, lang: str, *, closing: 
     return f'''<!doctype html><html lang="{lang}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 p{{text-wrap:pretty}}h1,h2,h3{{text-wrap:balance}}
-@media(max-width:600px){{.mail-quant-secondary{{display:none!important}}}}
 @media(max-width:480px){{.mail-body{{padding:22px 16px!important}}.mail-table td,.mail-table th{{padding:8px 4px!important}}.mail-table{{font-size:13px!important}}.mail-hero{{font-size:26px!important}}}}
 @media(max-width:380px){{.mail-hero-cell{{display:block!important;width:auto!important;text-align:left!important;padding:12px 0!important}}.mail-hero-right{{border-top:1px solid {BORDER}}}}}
 </style></head>

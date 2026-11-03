@@ -138,3 +138,26 @@ def test_optional_quantitative_failure_does_not_block_daily(portfolio_files, mon
     assert run(**portfolio_files, dry_run=True) == 0
     html = (portfolio_files['output_dir'] / f'{DAY}.html').read_text()
     assert 'Quantitative market observations' not in html
+
+
+def test_daily_badges_remain_compact_in_both_modes_and_languages():
+    from stockwatch.providers.demo import DemoProvider
+    from stockwatch.storage import ROOT,load_config,load_transactions
+    from stockwatch.services import snapshot
+    from stockwatch.reports import render_report
+    from stockwatch.calendar import previous_session
+    provider=DemoProvider()
+    config=load_config(ROOT/'examples/config.yaml')
+    book,quotes=snapshot(config,load_transactions(ROOT/'examples/transactions.csv'),provider,provider.session,closing=True)
+    for lang in ('en','zh-CN'):
+        config['portfolio']['language']=lang
+        for mode in ('CLOSE','INTRADAY'):
+            analysis=build_analysis(quantitative_histories(config,book,provider,provider.session,mode),book,config,provider.session,mode=mode)
+            report=render_report(provider.session,book,quotes,config,[],mode=mode,quantitative_analysis=analysis)
+            phrase='日常波幅' if lang=='zh-CN' else 'Daily swing'
+            assert phrase in report.text and phrase in report.html
+            assert 'mail-quant-explanation' not in report.html
+            assert 'This swing-size percentage' not in report.html.split('aria-hidden=')[0]
+            assert '.mail-quant-secondary{display:none' not in report.html
+            assert str(previous_session(provider.session) if mode=='INTRADAY' else provider.session) in report.text
+            assert report.html.count("class='mail-holding'")==len(book['holdings'])

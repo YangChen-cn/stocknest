@@ -180,3 +180,6 @@ Quant Lab now defaults to a bilingual Beginner portfolio view, with Advanced cha
 
 
 CI runs the complete offline suite with `--durations=15 --durations-min=0.2` so slow tests remain visible. UI navigation checks share one flow per language; workflow tests use isolated market fixtures, while dedicated provider/cache, garden rendering, accounting, alert and sync-failure tests keep their full behavior coverage.
+
+
+Plain-language quantitative labels keep daily emails compact; full Beginner explanations are available under the collapsed Explanation and basis panel. Indicator calculations and stage thresholds are unchanged.

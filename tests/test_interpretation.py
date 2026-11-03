@@ -76,3 +76,35 @@ def test_claimed_complete_with_insufficient_samples_is_unknown():
     assert interpret_instrument(item)['trend']['stage_id']=='unavailable'
     item['metrics']['atr_price_ratio']['value']='-.04'
     assert interpret_instrument(item)['atr']['stage_id']=='unavailable'
+
+
+@pytest.mark.parametrize('lang', ['en', 'zh-CN'])
+def test_plain_explanations_cover_every_stage_without_changing_boundaries(lang):
+    from stockwatch.interpretation import DEFINITIONS, PLAIN_STAGES, plain_explanation
+    from stockwatch.i18n import ZH
+    for kind, stages in PLAIN_STAGES.items():
+        for stage in [*stages, 'unavailable']:
+            result=plain_explanation(kind,stage,lang)
+            assert result['definition'] and result['plain_summary']
+            if lang=='zh-CN':
+                assert DEFINITIONS[kind] in ZH
+                if stage in stages:
+                    assert stages[stage] in ZH
+    item=facts(atr_price_ratio='.032')
+    nodes=interpret_instrument(item,lang)
+    badge=next(b for b in compact_badges(nodes,lang) if b['kind']=='atr')
+    assert '3.2%' in badge['label']
+    assert ('亏损概率' if lang=='zh-CN' else 'loss probability') in badge['explanation']
+    item['quality']='stale'
+    unavailable=interpret_instrument(item,lang)
+    assert all(n['stage_id']=='unavailable' for n in unavailable.values())
+    assert not compact_badges(unavailable,lang)
+
+
+def test_badges_are_short_with_plain_meaning_without_paragraphs():
+    from stockwatch.presentation import email_quant_badges
+    badges=compact_badges(interpret_instrument(facts(rsi14='80'),'zh-CN'),'zh-CN')
+    html=email_quant_badges(badges)
+    assert '近期涨得急' in html and '日常波幅' in html
+    assert 'mail-quant-explanation' not in html
+    assert '.mail-quant-secondary{display:none' not in html
