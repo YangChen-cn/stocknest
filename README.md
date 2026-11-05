@@ -116,7 +116,7 @@ Deploy your **private** repo to [Streamlit's free hosting](https://share.streaml
 
 | Feature | What it does | Where |
 | --- | --- | --- |
-| HSBC execution import | Reads fully-executed USD trade confirmations from Gmail (read-only IMAP), deduplicated by trade ID | [使用说明 · 自动导入汇丰成交](使用说明.md) |
+| HSBC execution import | Imports fully executed USD buys and sells from read-only Gmail IMAP, deduplicated by trade ID | [使用说明 · 自动导入汇丰成交](使用说明.md) |
 | Weekly / monthly summaries | Saturday / first-weekend-day reports with period returns, flows and fees | Enable in `reports:` config, run manually via Actions, or automate below |
 | cron-job.org scheduler | Exact New York trigger times and weekly/monthly automation (GitHub's own schedule stays fixed-time) | [使用说明 · cron-job.org 外部自动调度](使用说明.md) |
 | AI-readable JSON | Every email carries a versioned JSON block + attachment; dashboard exports a live snapshot | [使用说明 · 用 GPT / Gmail 分析日报](使用说明.md) |
@@ -176,7 +176,7 @@ python -m stockwatch.daily --demo --dry-run   # offline preview with synthetic d
 Quantitative Daily Insights enriches daily report JSON with dated technical indicators, adjacent-session changes and portfolio concentration, compact inline email stage badges. [Fields and rules / 字段与规则](docs/quantitative-insights.md).
 
 
-Quant Lab now defaults to a bilingual Beginner portfolio view, with Advanced charts retained. Daily emails show dated stage badges beside existing ticker names. [Stage rules and data quality](docs/interpretation.md).
+Quant Lab now defaults to a bilingual Beginner portfolio view, with Advanced charts retained. Daily emails show dated stage badges with holdings and below each watchlist quote. [Stage rules and data quality](docs/interpretation.md).
 
 
 CI runs the complete offline suite with `--durations=15 --durations-min=0.2` so slow tests remain visible. UI navigation checks share one flow per language; workflow tests use isolated market fixtures, while dedicated provider/cache, garden rendering, accounting, alert and sync-failure tests keep their full behavior coverage.

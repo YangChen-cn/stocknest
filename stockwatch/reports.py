@@ -6,7 +6,7 @@ from math import isfinite
 from decimal import Decimal
 
 from stockwatch.alerts import Alert, report_session_key, target_distances
-from stockwatch.calendar import NY
+from stockwatch.calendar import NY, previous_session
 from stockwatch.i18n import data_status, language, t
 from stockwatch.providers.base import Quote
 from stockwatch.performance import milestone_status, period_returns
@@ -14,7 +14,7 @@ from stockwatch.report_data import append_data, report_data, serialize_data
 from stockwatch.garden import Garden
 from stockwatch.garden_render import garden_view
 
-from stockwatch.presentation import GREEN, RED, NEUTRAL, SOFT, InlineImage, atomic, email_hero, email_holding, email_metrics, email_section, email_shell, reflection, reflection_html, record_note, value_color
+from stockwatch.presentation import GREEN, INK, RED, NEUTRAL, SOFT, InlineImage, atomic, email_hero, email_holding, email_metrics, email_section, email_shell, reflection, reflection_html, record_note, value_color
 
 
 def money(value, *, signed: bool = False, lang: str = "en") -> str:
@@ -76,15 +76,17 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
 
     from stockwatch.interpretation import compact_badges
     from stockwatch.presentation import email_quant_badges
-    interpretations = ((quantitative_analysis or {}).get('interpretation') or {}).get('instruments') or {}
+    cutoff = str(previous_session(session) if intraday else session) if quantitative_analysis else None
+    interpretations = {}
+    if cutoff and quantitative_analysis.get('expected_daily_session') == cutoff:
+        interpretations = (quantitative_analysis.get('interpretation') or {}).get('instruments') or {}
+
     def stock_badges(symbol):
-        from stockwatch.calendar import previous_session
-        cutoff = previous_session(session) if intraday else session
-        if (quantitative_analysis or {}).get('expected_daily_session') != str(cutoff):
-            return []
-        return compact_badges(interpretations.get(symbol, {}), lang)
+        return [badge for badge in compact_badges(interpretations.get(symbol), lang) if badge['session'] == cutoff]
+
     def badge_html(symbol):
         return email_quant_badges(stock_badges(symbol), lang)
+
     def badge_text(symbol):
         badges = stock_badges(symbol)
         return (' [' + str(badges[0]['session']) + ' · ' + ' / '.join(b['label'] for b in badges) + ']') if badges else ''
@@ -98,13 +100,32 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
             rows.append(f"<div style='padding:9px 2px;font-size:13px;line-height:1.75;text-wrap:pretty;overflow-wrap:break-word;{border}'>{escape(item)}</div>")
         return "".join(rows)
 
-    def styled_table(headers: tuple[str, ...], rows_html: str) -> str:
-        head = "".join(f"<th style='padding:8px;background:{SOFT};color:{NEUTRAL};font-size:12px;"
-                       f"font-weight:500;text-align:left'>{escape(tr(header))}</th>" for header in headers)
-        return f"<table class='mail-table' style='width:100%;border-collapse:collapse;font-size:14px;text-align:left'><tr>{head}</tr>{rows_html}</table>"
-
-    def shade_style(index: int) -> str:
-        return f"padding:7px;border-bottom:1px solid #e8ece6;background:{'#ffffff' if index % 2 == 0 else '#f7f8f5'}"
+    def watch_table(headers: tuple[str, ...], rows: list[tuple[str, list[tuple[str, str]]]]) -> str:
+        head = "".join(f"<th scope='col' style='padding:7px 5px;background:{SOFT};color:{NEUTRAL};font-size:12px;"
+                       f"font-weight:500;text-align:{'left' if index == 0 else 'right'}'>{escape(tr(header))}</th>"
+                       for index, header in enumerate(headers))
+        rows_html = []
+        has_badges = False
+        unavailable = tr('Data unavailable')
+        missing = f"<span title='{escape(unavailable)}' aria-label='{escape(unavailable)}'>—</span>"
+        border = 'border-bottom:1px solid #e8ece6;'
+        for index, (symbol, values) in enumerate(rows):
+            badges = email_quant_badges(stock_badges(symbol), lang, show_date=False)
+            has_badges = has_badges or bool(badges)
+            background = '#ffffff' if index % 2 == 0 else '#f7f8f5'
+            padding = 'padding:8px 5px 2px;' if badges else f'padding:8px 5px;{border}'
+            ticker_label = atomic(symbol) if len(symbol) <= 6 else escape(symbol)
+            cells = [f"<th scope='row' style='{padding}text-align:left;overflow-wrap:anywhere'>{ticker_label}</th>"]
+            for value, color in values:
+                label = missing if value == unavailable else atomic(value)
+                cells.append(f"<td style='{padding}text-align:right;color:{color}'>{label}</td>")
+            detail = (f"<tr class='mail-watch-quant'><td colspan='{len(headers)}' style='padding:0 5px 8px;{border}"
+                      f"line-height:1.4;text-align:left'>{badges}</td></tr>") if badges else ''
+            rows_html.append(f"<tbody style='background:{background}'><tr>{''.join(cells)}</tr>{detail}</tbody>")
+        date_note = (f"<p style='font-size:11px;color:{NEUTRAL};margin:5px 0 0'>{atomic(tr('Indicators at {date} close', date=cutoff))}</p>"
+                     if has_badges else '')
+        return ("<table class='mail-watchlist' style='width:100%;border-collapse:collapse;font-size:13px'>"
+                f"<thead><tr>{head}</tr></thead>{''.join(rows_html)}</table>{date_note}")
 
     heading = tr("StockWatch Intraday" if intraday else "StockWatch Daily")
     title = f"{heading} — {session.isoformat()}"
@@ -176,19 +197,15 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
         ranking = tr("Absolute daily change reaches 5%; ranked by magnitude. Normal-session snapshots, not final closes.")
         lines.extend(["", heading_watch, ranking])
         cells = []
-        for index, quote in enumerate(highlights):
+        for quote in highlights:
             stamp = quote.price_at.astimezone(NY).strftime("%H:%M %Z") if quote.price_at else tr("Data unavailable")
-            values = [quote.symbol, m(quote.price), p(quote.daily_move_pct), stamp]
+            price, daily = m(quote.price), p(quote.daily_move_pct)
             lines.append(tr("{symbol}: {price} · Today {daily} · Price time {time} New York",
-                            symbol=quote.symbol + badge_text(quote.symbol), price=values[1], daily=values[2], time=stamp))
-            style = shade_style(index)
-            cells.append("<tr>" + f"<td style='{style}'><strong>{escape(values[0])}</strong>{badge_html(values[0])}</td>"
-                         + f"<td style='{style}'>{escape(values[1])}</td>"
-                         + f"<td style='{style};color:{value_color(quote.daily_move_pct)}'>{escape(values[2])}</td>"
-                         + f"<td style='{style}'>{escape(values[3])}</td></tr>")
-        headers = ("Symbol", "Current Price", "Daily %", "Price time (New York)")
+                            symbol=quote.symbol + badge_text(quote.symbol), price=price, daily=daily, time=stamp))
+            cells.append((quote.symbol, [(price, INK), (daily, value_color(quote.daily_move_pct)), (stamp, NEUTRAL)]))
+        headers = ("Code", "Last", "Day %", "Time (ET)")
         watch_html = section(heading_watch, f"<p style='font-size:12px;color:{NEUTRAL};margin:0 0 8px'>{escape(ranking)}</p>"
-                             + styled_table(headers, "".join(cells)))
+                             + watch_table(headers, cells))
     if not intraday and any(symbol not in held_symbols for symbol in config["watchlist"]):
         rows = watchlist_rows if watchlist_rows is not None else [
             {"Symbol": symbol, "Current Price": quotes.get(symbol, Quote(symbol)).price,
@@ -197,18 +214,15 @@ def render_report(session: date, portfolio: dict, quotes: dict[str, Quote], conf
         rows = [row for row in rows if row["Symbol"] not in held_symbols]
         lines.extend(["", tr("Watchlist summary (closing prices)")])
         watch_cells = []
-        for index, row in enumerate(rows):
-            values = [row["Symbol"], m(row["Current Price"]), p(row["Daily %"]), p(row["5D %"]), p(row["1M %"])]
+        for row in rows:
+            symbol, price = row["Symbol"], m(row["Current Price"])
+            daily, five, month = p(row["Daily %"]), p(row["5D %"]), p(row["1M %"])
             lines.append(tr("{symbol}: {price} · Today {daily} · 5D {five} · 1M {month}",
-                            symbol=values[0] + badge_text(values[0]), price=values[1], daily=values[2], five=values[3], month=values[4]))
-            style = shade_style(index)
-            watch_cells.append("<tr>" + f"<td style='{style}'><strong>{escape(str(values[0]))}</strong>{badge_html(values[0])}</td>"
-                               + f"<td style='{style}'>{escape(values[1])}</td>"
-                               + f"<td style='{style};color:{value_color(row['Daily %'])}'>{escape(values[2])}</td>"
-                               + f"<td style='{style};color:{value_color(row['5D %'])}'>{escape(values[3])}</td>"
-                               + f"<td style='{style};color:{value_color(row['1M %'])}'>{escape(values[4])}</td></tr>")
-        headers = ("Symbol", "Current Price", "Daily %", "5D %", "1M %")
-        watch_html = section(tr("Watchlist summary (closing prices)"), styled_table(headers, "".join(watch_cells)))
+                            symbol=symbol + badge_text(symbol), price=price, daily=daily, five=five, month=month))
+            watch_cells.append((symbol, [(price, INK), (daily, value_color(row['Daily %'])),
+                                         (five, value_color(row['5D %'])), (month, value_color(row['1M %']))]))
+        headers = ("Code", "Last", "Day %", "5-day", "1-month")
+        watch_html = section(tr("Watchlist summary (closing prices)"), watch_table(headers, watch_cells))
     alert_messages = [alert.message for alert in alerts]
     distances = target_distances(config, quotes) if not intraday else []
     unusual = []

@@ -152,8 +152,8 @@ def email_shell(title: str, subtitle: str, content: str, lang: str, *, closing: 
     return f'''<!doctype html><html lang="{lang}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 p{{text-wrap:pretty}}h1,h2,h3{{text-wrap:balance}}
-@media(max-width:480px){{.mail-body{{padding:22px 16px!important}}.mail-table td,.mail-table th{{padding:8px 4px!important}}.mail-table{{font-size:13px!important}}.mail-hero{{font-size:26px!important}}}}
-@media(max-width:380px){{.mail-hero-cell{{display:block!important;width:auto!important;text-align:left!important;padding:12px 0!important}}.mail-hero-right{{border-top:1px solid {BORDER}}}}}
+@media(max-width:480px){{.mail-body{{padding:22px 16px!important}}.mail-hero{{font-size:26px!important}}}}
+@media(max-width:380px){{.mail-hero-cell{{display:block!important;width:auto!important;text-align:left!important;padding:12px 0!important}}.mail-hero-right{{border-top:1px solid {BORDER}}}.mail-watchlist,.mail-watchlist th{{font-size:11px!important}}.mail-watchlist th,.mail-watchlist td{{padding-left:3px!important;padding-right:3px!important}}.mail-watchlist .mail-quant-badge{{padding-left:4px!important;padding-right:4px!important}}}}
 </style></head>
 <body style="margin:0;padding:16px 4px;background:{BACKGROUND};font-family:{FONT};color:{INK};font-size:15px;line-height:1.65;font-variant-numeric:tabular-nums">
 <table role="presentation" style="width:100%;border-collapse:collapse"><tr><td align="center">
@@ -163,7 +163,7 @@ p{{text-wrap:pretty}}h1,h2,h3{{text-wrap:balance}}
 {content}{footer}</div></td></tr></table></body></html>'''
 
 
-def email_quant_badges(badges, lang='en'):
+def email_quant_badges(badges, lang='en', *, show_date=True):
     colors = {'green': ('#eaf1eb', '#42634f'), 'red': ('#f5eae7', '#8d5752'),
               'yellow': ('#f5f0df', '#796c41'), 'gray': ('#eef0ee', '#68756e')}
     result = []
@@ -174,6 +174,6 @@ def email_quant_badges(badges, lang='en'):
         result.append(f"<span class='mail-quant-badge{secondary}' title='{escape(title, quote=True)}' "
                       f"style='display:inline-block;vertical-align:middle;max-width:100%;box-sizing:border-box;margin:3px 3px 0 0;padding:2px 6px;"
                       f"font-size:10px;font-weight:400;line-height:1.5;border-radius:9px;background:{bg};color:{fg};overflow-wrap:anywhere'>{escape(badge['label'])}</span>")
-    if result:
-        result.insert(0, f"<span style='font-size:10px;font-weight:400;color:{NEUTRAL};display:inline-block;margin:0 4px'>{escape(t('Close {date}', lang, date=badges[0]['session']))}</span>")
+    if result and show_date:
+        result.insert(0, f"<span style='font-size:10px;font-weight:400;color:{NEUTRAL};display:inline-block;white-space:nowrap;margin:0 4px'>{escape(t('Close {date}', lang, date=badges[0]['session']))}</span>")
     return ''.join(result)

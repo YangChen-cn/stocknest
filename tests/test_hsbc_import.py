@@ -23,7 +23,7 @@ def receipt(reference="T0001", side="買入", day="2026-10-06"):
                        "Tue, 6 Oct 2026 14:00:00 +0000", AUTH, body, "synthetic-id")
 
 
-@pytest.mark.parametrize("side,result", [("買入", "BUY"), ("賣出", "SELL")])
+@pytest.mark.parametrize("side,result", [("買入", "BUY"), ("賣出", "SELL"), ("沽出", "SELL")])
 def test_clear_completed_orders(side, result):
     execution = parse_execution(receipt(side=side))
     assert execution.trade_id == "T0001" and execution.transaction.side == result
@@ -36,6 +36,7 @@ def test_clear_completed_orders(side, result):
     lambda m: replace(m, authentication="mx.google.com; dkim=fail; dmarc=fail"),
     lambda m: replace(m, authentication=AUTH.replace("hsbc.com.hk", "hsbc.com.hk.evil.example")),
     lambda m: replace(m, subject=m.subject.replace("全部執行", "部分執行")),
+    lambda m: replace(m, body=m.body.replace("指示類別: 買入", "指示類別: 沽出")),
     lambda m: replace(m, body=m.body.replace("交易狀況: 全部執行", "交易狀況: 已取消")),
     lambda m: replace(m, body=m.body.replace("餘下數量(股/單位): 0", "餘下數量(股/單位): 1")),
     lambda m: replace(m, body=m.body.replace("共成交數量(股/單位): 2", "共成交數量(股/單位): 3")),
@@ -71,11 +72,14 @@ def test_idempotent_repeat_dry_run_and_chronological_sell(files):
     ledger, audit = files
     preview = import_messages([receipt()], ledger, audit, dry_run=True)
     assert preview["imported"] == 1 and not load_transactions(ledger) and not audit.exists()
-    result = import_messages([receipt(side="賣出", reference="T0002"), receipt()], ledger, audit)
+    sale = receipt(side="沽出", reference="T0002")
+    result = import_messages([sale, receipt()], ledger, audit)
     # Same-day order is intentionally input order; sell-before-buy must be skipped.
     assert result["imported"] == 1 and result["skipped"] == 1
     assert import_messages([receipt()], ledger, audit)["duplicates"] == 1
-    assert len(load_transactions(ledger)) == 1
+    assert import_messages([sale], ledger, audit)["imported"] == 1
+    assert import_messages([sale], ledger, audit)["duplicates"] == 1
+    assert [tx.side for tx in load_transactions(ledger)] == ["BUY", "SELL"]
 
 
 def test_csv_first_survives_audit_write_failure(files, monkeypatch):

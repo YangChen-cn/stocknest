@@ -161,3 +161,26 @@ def test_daily_badges_remain_compact_in_both_modes_and_languages():
             assert '.mail-quant-secondary{display:none' not in report.html
             assert str(previous_session(provider.session) if mode=='INTRADAY' else provider.session) in report.text
             assert report.html.count("class='mail-holding'")==len(book['holdings'])
+
+
+@pytest.mark.parametrize('mode,columns', [('CLOSE', 5), ('INTRADAY', 4)])
+def test_watchlist_quantitative_badges_span_the_price_table(mode, columns):
+    from stockwatch.portfolio import calculate
+    from stockwatch.providers.base import Quote
+    from stockwatch.reports import render_report
+
+    book = calculate({}, {})
+    config = {'portfolio': {'language': 'zh-CN'}, 'watchlist': {'WATCH': {}, 'EMPTY': {}}}
+    analysis = build_analysis({'WATCH': bars()}, book, config, DAY, mode=mode)
+    quotes = {'WATCH': Quote('WATCH', 107, 100, session=DAY),
+              'EMPTY': Quote('EMPTY', 106, 100, session=DAY)}
+    report = render_report(DAY, book, quotes, config, [], mode=mode, quantitative_analysis=analysis)
+    table = report.html.split("class='mail-watchlist'", 1)[1].split('</table>', 1)[0]
+    main, detail = table.split("<tr class='mail-watch-quant'>", 1)
+    assert 'WATCH' in main and '$107.00' in main and '+7.00%' in main
+    assert 'mail-quant-badge' not in main
+    assert f"colspan='{columns}'" in detail and detail.count('mail-quant-badge') == 4
+    assert 'EMPTY' in detail.split('</tbody>', 1)[1]
+    assert "aria-label='数据不可用'>—" in table
+    assert f"量化指标截至 {analysis['expected_daily_session']} 收盘" in report.html
+    assert json.loads(report.data_json)['quantitative_analysis'] == analysis

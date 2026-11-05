@@ -21,6 +21,7 @@ from stockwatch.storage import (Transaction, ValidationError, atomic_write, load
 SENDER = "hsbc@notification.hsbc.com.hk"
 logger = logging.getLogger(__name__)
 MARKER = re.compile(r"\[HSBC:([A-Z0-9-]{3,40})\]")
+ORDER_SIDES = {"買入": "BUY", "賣出": "SELL", "沽出": "SELL"}
 
 
 class HSBCSyncError(UserFacingError, RuntimeError):
@@ -104,7 +105,7 @@ def parse_execution(message: BankMessage, *, allow_email_date: bool = False,
         raise ReceiptSkipped("authentication_not_confirmed")
     if len(message.body) > 1_000_000:
         raise ReceiptSkipped("message_too_large")
-    subject = re.fullmatch(r"全部執行\s*[:：]\s*(買入|賣出)\s+([A-Z][A-Z0-9.\-]{0,19})\s*[:：].*?"
+    subject = re.fullmatch(r"全部執行\s*[:：]\s*(買入|賣出|沽出)\s+([A-Z][A-Z0-9.\-]{0,19})\s*[:：].*?"
                            r"\(交易編號\s*[:：]\s*([A-Z0-9-]{3,40})\)\s*", message.subject)
     if not subject:
         raise ReceiptSkipped("unsupported_subject_or_status")
@@ -112,8 +113,8 @@ def parse_execution(message: BankMessage, *, allow_email_date: bool = False,
     trade_id = _field(text, "交易編號")
     if trade_id != subject[3] or _field(text, "交易狀況") != "全部執行":
         raise ReceiptSkipped("inconsistent_order_or_status")
-    side_text = _field(text, "指示類別")
-    if side_text != subject[1]:
+    side = ORDER_SIDES.get(_field(text, "指示類別"))
+    if side != ORDER_SIDES[subject[1]]:
         raise ReceiptSkipped("inconsistent_side")
     stock = _field(text, r"股票名稱\s*/\s*股票編號")
     stock_match = re.fullmatch(r".+?\s*\(([A-Z][A-Z0-9.\-]{0,19})\)", stock)
@@ -151,7 +152,7 @@ def parse_execution(message: BankMessage, *, allow_email_date: bool = False,
         raise ReceiptSkipped("invalid_date") from None
     if day not in sessions(day, day):
         raise ReceiptSkipped("non_trading_date")
-    tx = Transaction(day, ticker(stock_match[1]), "BUY" if side_text == "買入" else "SELL",
+    tx = Transaction(day, ticker(stock_match[1]), side,
                      shares, price, f"[HSBC:{trade_id}] date_source={source}; fee_not_provided", Decimal(0))
     return Execution(trade_id, tx, source)
 

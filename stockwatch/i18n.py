@@ -71,6 +71,8 @@ ZH = {
     "Completed NYSE session · USD": "NYSE 已完成交易时段 · 美元",
     "Snapshot at {time} New York · not final closing prices": "快照生成时间：美东 {time} · 盘中价格，并非最终收盘价",
     "Price time (New York)": "行情时间（美东）",
+    "Code": "代码", "Last": "价格", "Day %": "当日", "5-day": "5日", "1-month": "1月", "Time (ET)": "时间（美东）",
+    "Indicators at {date} close": "量化指标截至 {date} 收盘",
     "Minute snapshots may be delayed. They are not final closing prices.": "分钟行情可能延迟，盘中快照并非最终收盘价格。",
     "No active NYSE session; intraday run skipped": "当前不在 NYSE 正常交易时段，已跳过盘中报告。",
     "Notable moves": "明显异动", "No moves reached the threshold.": "暂无达到阈值的明显异动。",
