@@ -25,6 +25,7 @@ from stockwatch.calendar import current_price_session, latest_session, active_se
 from stockwatch.history import period_start
 from stockwatch.performance import DEFAULT_BENCHMARK, build_history, load_history, fingerprint, milestone_status, period_returns
 from stockwatch.control import (ControlError, trigger_workflow)
+from stockwatch.dashboard_proxy import dashboard_activity
 from stockwatch.git_sync import SyncError, sync
 from stockwatch.i18n import LANGUAGES, data_status, error_message, language, t
 from stockwatch.notifications.email import configuration_status
@@ -831,6 +832,12 @@ def ai_export(config, transactions, portfolio, quotes, as_of, demo, watchlist_ro
 
 
 def main(app_name: str = "StockWatch"):
+    with dashboard_activity() as running:
+        if running:
+            _main(app_name)
+
+
+def _main(app_name: str):
     st.set_option("client.toolbarMode", "minimal")
     st.set_page_config(page_title=app_name, page_icon="📈", layout="wide")
     apply_style()

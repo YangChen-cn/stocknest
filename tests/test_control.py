@@ -1,5 +1,6 @@
 import json
 import plistlib
+import socket
 import subprocess
 
 import pytest
@@ -51,40 +52,50 @@ def test_launchd_plist_and_only_user_requested_commands(tmp_path, monkeypatch):
     plist = tmp_path / "agents/dashboard.plist"
     (tmp_path / "app.py").write_text("# app")
     calls = []
-    loaded = [False]
+    service = [""]
     def command(args, **kwargs):
         calls.append(args)
         if "print" in args:
-            return subprocess.CompletedProcess(args, 0 if loaded[0] else 113, "pid = 123" if loaded[0] else "", "")
+            return subprocess.CompletedProcess(args, 0 if service[0] else 113, service[0], "")
         if "bootstrap" in args:
-            loaded[0] = True
+            service[0] = f"working directory = {tmp_path}\nstockwatch.dashboard_proxy\n"
         if "bootout" in args:
-            loaded[0] = False
+            service[0] = ""
+        if args[0] == "/bin/ps":
+            return subprocess.CompletedProcess(args, 0, "123\n", "")
         return subprocess.CompletedProcess(args, 0, "", "")
     monkeypatch.setattr(control.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(control, "_plist_path", lambda: plist)
     monkeypatch.setattr(control, "_command", command)
-    def no_port(*args, **kwargs):
-        raise OSError
-    monkeypatch.setattr(control.socket, "create_connection", no_port)
-    assert not control.service_status(tmp_path)["installed"]
+    monkeypatch.setattr(control, "_port_in_use", lambda: False)
+    monkeypatch.setattr(socket, "create_connection", lambda *a, **k: pytest.fail("Status must not connect to 8501"))
+    assert control.service_status(tmp_path)["state"] == "not_installed"
     assert not any("bootstrap" in call for call in calls)
-    control.install_service(tmp_path)
+    control.install_service(tmp_path, activate=False)
     payload = plistlib.loads(plist.read_bytes())
-    assert payload["RunAtLoad"] and payload["KeepAlive"]
-    assert "--server.address=127.0.0.1" in payload["ProgramArguments"]
+    assert not payload.get("RunAtLoad") and not payload.get("KeepAlive")
+    assert payload["Sockets"] == {"Dashboard": {"SockFamily": "IPv4", "SockNodeName": "127.0.0.1", "SockServiceName": "8501"}}
+    assert payload["ProgramArguments"][-2:] == ["--idle-seconds", "600"]
     assert "stockwatch.daily" not in str(payload) and "TOKEN" not in str(payload)
     assert not control.service_status(tmp_path)["loaded"]
     assert not any("bootstrap" in call or "kickstart" in call for call in calls)
     control.start_service(tmp_path)
-    assert control.service_status(tmp_path)["running"]
+    assert control.service_status(tmp_path)["state"] == "standby"
+    service[0] += "pid = 123\n"
+    assert control.service_status(tmp_path)["state"] == "starting"
+    (tmp_path / "logs/dashboard-ready").write_text("999 124")
+    assert control.service_status(tmp_path)["state"] == "starting"
+    (tmp_path / "logs/dashboard-ready").write_text("123 124")
+    assert control.service_status(tmp_path)["streamlit_pid"] == 124
+    assert control.service_status(tmp_path)["state"] == "running"
     control.stop_service(tmp_path)
-    assert plist.exists() and not control.service_status(tmp_path)["running"]
+    assert plist.exists() and control.service_status(tmp_path)["state"] == "stopped"
     control.start_service(tmp_path)
     control.uninstall_service(tmp_path)
-    assert not plist.exists() and not loaded[0]
+    assert not plist.exists() and not service[0]
     control.service_status(tmp_path)
     assert not plist.exists()  # Reading status never creates or enables anything.
+    assert not any("kickstart" in args for args in calls)
 
 
 def test_launchd_other_checkout_and_other_platform(tmp_path, monkeypatch):
@@ -121,12 +132,55 @@ def test_enabling_next_login_with_occupied_port_never_starts_second_process(tmp_
     monkeypatch.setattr(control, "_plist_path", lambda: plist)
     calls = []
     monkeypatch.setattr(control, "_command", lambda args, **kwargs: calls.append(args) or subprocess.CompletedProcess(args, 113, "", ""))
-    monkeypatch.setattr(control.socket, "create_connection", lambda *a, **kw: __import__("contextlib").nullcontext())
-    control.install_service(tmp_path)
-    assert plist.exists() and calls == []
+    monkeypatch.setattr(control, "_port_in_use", lambda: True)
+    control.install_service(tmp_path, activate=False)
+    assert plist.exists()
+    assert control.service_status(tmp_path)["state"] == "port_in_use"
     with pytest.raises(ControlError, match="Port 8501"):
         control.start_service(tmp_path)
     assert not any("bootstrap" in args or "kickstart" in args for args in calls)
+
+
+def test_launchd_migrates_only_owned_legacy_job(tmp_path, monkeypatch):
+    plist = tmp_path / "dashboard.plist"
+    (tmp_path / "app.py").touch()
+    plist.write_bytes(plistlib.dumps({"Label": control.LABEL, "WorkingDirectory": str(tmp_path), "KeepAlive": True}))
+    actions = []
+    owner = "/other/checkout"
+    def command(args, **kwargs):
+        nonlocal owner
+        action = args[1]
+        if action == "print":
+            return subprocess.CompletedProcess(args, 0 if owner else 113, f"working directory = {owner}\n", "")
+        actions.append(action)
+        if action == "bootout":
+            owner = ""
+        if action == "bootstrap":
+            assert plistlib.loads(plist.read_bytes())["Sockets"]
+        return subprocess.CompletedProcess(args, 0, "", "")
+    monkeypatch.setattr(control.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(control, "_plist_path", lambda: plist)
+    monkeypatch.setattr(control, "_port_in_use", lambda: bool(owner))
+    monkeypatch.setattr(control, "_command", command)
+    with pytest.raises(ControlError, match="another checkout"):
+        control.install_service(tmp_path)
+    assert not actions
+    owner = str(tmp_path)
+    assert control.service_status(tmp_path)["state"] == "legacy"
+    control.install_service(tmp_path)
+    assert actions == ["bootout", "bootstrap"]
+
+
+def test_port_inspection_ignores_old_connections(monkeypatch):
+    def listeners(args, **kwargs):
+        assert "-sTCP:LISTEN" in args
+        return subprocess.CompletedProcess(args, 0 if rows else 1, "\n".join(rows), "")
+
+    rows = []
+    monkeypatch.setattr(control, "_command", listeners)
+    assert not control._port_in_use()
+    rows.append("n*:8501")
+    assert control._port_in_use()
 
 
 def test_cloud_credentials_checks_names_only(tmp_path, monkeypatch):

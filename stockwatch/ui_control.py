@@ -135,24 +135,25 @@ def control_center(path, config, demo, ROOT, hsbc_control, email_control, readon
             except ControlError as exc:
                 st.error(localized_error(exc))
         st.caption(text("Uses your existing gh login. Disabling the daily workflow stops both schedules; CI stays enabled."))
-    with st.expander(text("macOS login startup"), expanded=False):
+    with st.expander(text("macOS on-demand Dashboard"), expanded=False):
         try:
             local = service_status(ROOT)
-            st.write(text("Service: {state} · Login startup: {startup} · Port 8501: {port}",
-                          state=text("Running" if local["running"] else "Manual Dashboard or other process" if local["port_open"] else "Stopped"),
-                          startup=text("Enabled" if local["installed"] else "Disabled"),
-                          port=text("Responding" if local["port_open"] else "Closed")))
             if local["supported"]:
+                states = {"running": "Running", "starting": "Starting", "standby": "On-demand standby",
+                          "stopped": "Installed but paused", "not_installed": "Not installed",
+                          "legacy": "Legacy login service", "port_in_use": "Manual Dashboard or other process"}
+                st.write(text("Dashboard: {state}", state=text(states[local["state"]])))
                 cols = st.columns(3)
-                actions = ("Enable login startup", "Stop service", "Disable login startup")
-                funcs = (install_service, stop_service, uninstall_service)
-                for column, label, function in zip(cols, actions, funcs):
-                    if column.button(text(label), disabled=demo or readonly or label == "Stop service" and not local["loaded"]):
-                        function(ROOT)
-                        st.success(text("Service setting updated. Refresh the page to see its status."))
+                disabled = demo or readonly
+                if cols[0].button(text("Install on-demand startup"), disabled=disabled or local["installed"] and local["state"] != "legacy"):
+                    install_service(ROOT, activate=False)
+                    st.success(text("Installed for the next login. To switch now, stop the manual Dashboard and run python -m stockwatch.control start."))
+                if cols[1].button(text("Stop service"), disabled=disabled or not local["loaded"]):
+                    stop_service(ROOT)
+                if cols[2].button(text("Uninstall on-demand startup"), disabled=disabled or not (local["loaded"] or local["installed"])):
+                    uninstall_service(ROOT)
+                st.caption(text("Open http://127.0.0.1:8501 to wake the Dashboard. Closing every tab starts the idle timer."))
             else:
-                st.info(text("Login startup is available only on macOS."))
+                st.info(text("On-demand Dashboard is available only on macOS."))
         except ControlError as exc:
             st.error(localized_error(exc))
-        st.caption(text("Enabling login startup only registers the next login and leaves this Dashboard running. To switch now, stop the manual terminal process, then run python -m stockwatch.control start in that terminal."))
-        st.caption(text("Login startup runs only the local Dashboard on 127.0.0.1:8501, not email jobs. Stopping it disconnects this page; cloud schedules continue."))

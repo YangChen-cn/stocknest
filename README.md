@@ -101,6 +101,8 @@ streamlit run app.py --server.address 127.0.0.1
 
 Open `http://127.0.0.1:8501`. First run creates `config.yaml` and an empty `data/transactions.csv` for you; toggle **Demo mode** in the sidebar to explore offline first. The dashboard binds to localhost only and has no built-in authentication — it is not meant to be exposed directly to the internet.
 
+On macOS, stop the manually running Dashboard, then run `python -m stockwatch.control install` once. Bookmark `http://127.0.0.1:8501` to start it on demand. Streamlit exits after all tabs close and the Dashboard has been idle for 10 minutes.
+
 <div align="center">
 <table><tr>
 <td><img src="docs/images/watchlist-demo.png" alt="Watchlist" width="100%"/><sub>Watchlist &amp; alerts</sub></td>
@@ -120,7 +122,7 @@ Deploy your **private** repo to [Streamlit's free hosting](https://share.streaml
 | Weekly / monthly summaries | Saturday / first-weekend-day reports with period returns, flows and fees | Enable in `reports:` config, run manually via Actions, or automate below |
 | cron-job.org scheduler | Exact New York trigger times and weekly/monthly automation (GitHub's own schedule stays fixed-time) | [使用说明 · cron-job.org 外部自动调度](使用说明.md) |
 | AI-readable JSON | Every email carries a versioned JSON block + attachment; dashboard exports a live snapshot | [使用说明 · 用 GPT / Gmail 分析日报](使用说明.md) |
-| macOS login startup | Auto-start the local dashboard at login via launchd | [使用说明 · 本机 Gmail 与登录自启](使用说明.md) |
+| macOS on-demand Dashboard | Open the local URL to wake the Dashboard via launchd | [使用说明 · macOS 按需启动](使用说明.md) |
 
 The watchlist page and its bulk editor show only unheld candidates. Editing uses already loaded or saved prices and never waits for quote refresh; use **Refresh market data** explicitly for new prices. Manual price refresh allows 60 seconds per request and a five-minute overall budget. On macOS, opt into **Auto-sync after ten minutes** to schedule one push ten minutes after the first unsynced save, even with the browser closed. Idle operation uses file-change events rather than periodic polling; failed pushes retain changes and schedule a single retry after five minutes. Local edits can also be pushed with **Sync with GitHub** on the same page; hosted edits save directly through the restricted GitHub integration. Use the visible **Remove a watched stock** selector and **Remove from watchlist** button to remove a candidate and its notes, targets and alerts without changing transactions. Holding notes, targets and alerts are managed on Holdings; their settings are preserved when a stock moves out of the candidate view.
 
